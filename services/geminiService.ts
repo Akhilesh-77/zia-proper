@@ -162,22 +162,45 @@ export async function generateDynamicDescription(personality: string): Promise<s
   }
 }
 
-export async function generateScenario(
-    personaPersonality: string, 
-    userPrompt: string,
+export async function generateStory(
+    characters: { name: string, personality: string }[],
+    otherCharacterNames: string[],
+    scenario: string,
     selectedAI: AIModelOption
 ): Promise<string> {
-  const fullPrompt = `You are a creative writer tasked with starting a roleplay chat.
-- The bot's personality is: "${personaPersonality}"
-- The user has provided an optional theme/idea: "${userPrompt || 'None'}"
+    const characterProfiles = characters.map(c => `- ${c.name}: ${c.personality}`).join('\n');
+    const allCharacterNames = [...characters.map(c => c.name), ...otherCharacterNames].join(', ');
 
-Based on this, write a simple, creative, and engaging opening message (a "scenario") from the bot's point of view. The message should set a scene or start a conversation. It must be written in a human-like, first-person style. Keep it concise (2-4 sentences). Do not use quotation marks for the whole message, but you can use them for dialogue within the message. For example, instead of "*I look at you and say "hi"*", it should be something like "I look over at you, a small smile playing on my lips. 'Hi there,' I say softly."`;
-  
-  try {
-    return await generateText(fullPrompt, [], selectedAI);
-  } catch (error) {
-     return `Failed to generate scenario: ${error instanceof Error ? error.message : String(error)}`;
-  }
+    const systemPrompt = `You are a creative storyteller. Write a simple, short, third-person narrative story based on the provided details.
+
+# INSTRUCTIONS
+1.  **Scenario**: ${scenario}
+2.  **Characters Involved**: ${allCharacterNames}
+3.  **Character Personalities (if provided)**:
+${characterProfiles || 'N/A'}
+4.  **Style**: The story should be a simple, straightforward narrative. Focus on describing events and feelings rather than complex dialogue.
+5.  **Output**: The entire story should be a single, concise response.
+
+# IMPORTANT
+- Keep the story simple and easy to understand.
+- Do not write it like a script or a chat conversation.
+- If you use dialogue, keep it minimal.`;
+
+    try {
+        return await generateText(systemPrompt, [], selectedAI);
+    } catch (error) {
+        return `Failed to generate story: ${error instanceof Error ? error.message : String(error)}`;
+    }
+}
+
+export async function generateScenarioIdea(): Promise<string> {
+    const systemPrompt = `Generate a single, simple, and creative story scenario idea in one sentence. The idea should be suitable for a short story involving a few characters. Do not use quotes. Examples: A secret is revealed during a tense family dinner. Two strangers with opposite personalities get stuck in an elevator. An old, cryptic map leads to an unexpected discovery in their own backyard.`;
+    try {
+        const idea = await generateText(systemPrompt, [], 'gemini-2.5-flash');
+        return idea.replace(/"/g, '');
+    } catch (error) {
+        return `Failed to generate an idea: ${error instanceof Error ? error.message : String(error)}`;
+    }
 }
 
 export async function generateImage(prompt: string, sourceImage: string | null): Promise<string> {

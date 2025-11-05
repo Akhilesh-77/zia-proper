@@ -13,53 +13,40 @@ interface UserData {
     selectedAI: AIModelOption;
     voicePreference: VoicePreference | null;
     hasConsented: boolean;
+    savedImages: string[];
 }
 
-const STORAGE_KEY_PREFIX = 'userData_';
+const STORAGE_KEY = 'zia_userData';
 
-// Saves all of a user's data under a single key.
-export const saveUserData = async (userId: string, data: Partial<UserData>): Promise<void> => {
-    if (!userId) {
-        console.error("Attempted to save data without a user ID.");
-        return;
-    }
+// Saves all of the app's data under a single key.
+export const saveUserData = async (data: Partial<UserData>): Promise<void> => {
     try {
-        const key = `${STORAGE_KEY_PREFIX}${userId}`;
         // Load existing data to merge, preserving any fields not passed in the new data object
-        const existingData = await loadUserData(userId) || {};
+        const existingData = await loadUserData() || {};
         const dataToSave = { ...existingData, ...data };
-        await localforage.setItem(key, dataToSave);
-    } catch (error) {
-        console.error(`Failed to save data for user ${userId}`, error);
+        await localforage.setItem(STORAGE_KEY, dataToSave);
+    } catch (error)
+        {
+        console.error(`Failed to save data`, error);
     }
 };
 
-// Loads all data for a given user.
-export const loadUserData = async (userId: string): Promise<UserData | null> => {
-    if (!userId) {
-        console.error("Attempted to load data without a user ID.");
-        return null;
-    }
+// Loads all data for the user.
+export const loadUserData = async (): Promise<UserData | null> => {
     try {
-        const key = `${STORAGE_KEY_PREFIX}${userId}`;
-        const savedData = await localforage.getItem(key);
+        const savedData = await localforage.getItem(STORAGE_KEY);
         return savedData ? (savedData as UserData) : null;
     } catch (error) {
-        console.error(`Failed to load data for user ${userId}`, error);
+        console.error(`Failed to load data`, error);
         return null;
     }
 };
 
-// Clears all data for a given user.
-export const clearUserData = async (userId: string): Promise<void> => {
-    if (!userId) {
-        console.error("Attempted to clear data without a user ID.");
-        return;
-    }
+// Clears all data for the user.
+export const clearUserData = async (): Promise<void> => {
     try {
-        const key = `${STORAGE_KEY_PREFIX}${userId}`;
-        await localforage.removeItem(key);
+        await localforage.removeItem(STORAGE_KEY);
     } catch (error) {
-        console.error(`Failed to clear data for user ${userId}`, error);
+        console.error(`Failed to clear data`, error);
     }
 };

@@ -8,17 +8,21 @@ import ImageGeneratorPage from './components/ImageGeneratorPage';
 import ScenarioGeneratorPage from './components/ScenarioGeneratorPage';
 import FooterNav from './components/FooterNav';
 import SettingsPanel from './components/SettingsPanel';
-import LoginPage from './components/LoginPage';
 import type { User, BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference } from './types';
-import { onAuthStateChanged, signOut } from './services/authService';
 import { loadUserData, saveUserData, clearUserData } from './services/storageService';
 
-export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'scenario';
+export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'story';
+
+// A default user object for the login-free experience
+const defaultUser: User = {
+  id: 'local-user',
+  name: 'User',
+  email: 'local@user.com',
+  photoUrl: `https://i.pravatar.cc/150?u=localuser`,
+};
+
 
 const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
   // App State
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [bots, setBots] = useState<BotProfile[]>([]);
@@ -33,84 +37,47 @@ const App: React.FC = () => {
   const [voicePreference, setVoicePreference] = useState<VoicePreference | null>(null);
   const [hasConsented, setHasConsented] = useState<boolean>(false);
 
-  // Listen for authentication changes
+  // Load all data from storage on initial app load
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(async user => {
-      setCurrentUser(user);
-      if (user) {
-        // User is signed in, load their data
-        const data = await loadUserData(user.id);
-        if (data) {
-          setBots(data.bots || []);
-          setPersonas(data.personas || []);
-          setChatHistories(data.chatHistories || {});
-          setBotUsage(data.botUsage || {});
-          setTheme(data.theme || 'dark');
-          setSelectedAI(data.selectedAI || 'gemini-2.5-flash');
-          setVoicePreference(data.voicePreference || null);
-          setHasConsented(data.hasConsented || false);
-        } else {
-          // New user, reset to defaults
-          setBots([]);
-          setPersonas([]);
-          setChatHistories({});
-          setBotUsage({});
-          setTheme('dark');
-          setSelectedAI('gemini-2.5-flash');
-          setVoicePreference(null);
-          setHasConsented(false);
-        }
+    const loadData = async () => {
+      const data = await loadUserData();
+      if (data) {
+        setBots(data.bots || []);
+        setPersonas(data.personas || []);
+        setChatHistories(data.chatHistories || {});
+        setBotUsage(data.botUsage || {});
+        setTheme(data.theme || 'dark');
+        setSelectedAI(data.selectedAI || 'gemini-2.5-flash');
+        setVoicePreference(data.voicePreference || null);
+        setHasConsented(data.hasConsented || false);
       }
-      setIsLoading(false);
-    });
-
-    // Cleanup subscription on unmount
-    return () => unsubscribe();
+    };
+    loadData();
   }, []);
 
-  // Save data to storage whenever it changes for the logged-in user
+  // Save data to storage whenever it changes
   useEffect(() => {
-    if (!currentUser || isLoading) return;
-
-    const saveData = async () => {
-        const dataToSave = {
-          bots,
-          personas,
-          chatHistories,
-          botUsage,
-          theme,
-          selectedAI,
-          voicePreference,
-          hasConsented,
-        };
-        await saveUserData(currentUser.id, dataToSave);
+    const dataToSave = {
+      bots,
+      personas,
+      chatHistories,
+      botUsage,
+      theme,
+      selectedAI,
+      voicePreference,
+      hasConsented,
     };
-    saveData();
-  }, [bots, personas, chatHistories, botUsage, theme, selectedAI, voicePreference, hasConsented, currentUser, isLoading]);
+    // The initial empty state should not overwrite saved data.
+    // This check prevents clearing storage on the very first render.
+    if (bots.length > 0 || personas.length > 0 || Object.keys(botUsage).length > 0) {
+       saveUserData(dataToSave);
+    }
+  }, [bots, personas, chatHistories, botUsage, theme, selectedAI, voicePreference, hasConsented]);
 
   // Update document theme
   useEffect(() => {
       document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
-
-  const handleLogin = (user: User) => {
-    // Auth state listener will handle setting the user and loading data
-    // This function can be used for any post-login actions if needed
-    console.log("Login successful for:", user.name);
-  };
-
-  const handleLogout = async () => {
-    if (window.confirm("Are you sure you want to log out?")) {
-        await signOut();
-        // Reset state, the auth listener will handle setting currentUser to null
-        setBots([]);
-        setPersonas([]);
-        setChatHistories({});
-        setBotUsage({});
-        setCurrentPage('home');
-        setIsSettingsOpen(false);
-    }
-  };
   
   const handleNavigate = (page: Page) => {
     if ((page === 'create' || page === 'humans') && !hasConsented) {
@@ -165,6 +132,22 @@ const App: React.FC = () => {
             delete newHistories[id];
             return newHistories;
         });
+    }
+  };
+
+  const handleCloneBot = (id: string) => {
+    const botToClone = bots.find(b => b.id === id);
+    if (botToClone) {
+        if (window.confirm(`Are you sure you want to clone "${botToClone.name}"?`)) {
+            const newBot: BotProfile = {
+                ...botToClone,
+                id: `bot-${Date.now()}`,
+                name: `${botToClone.name} (Clone)`,
+            };
+            setBots(prev => [newBot, ...prev]);
+            setBotToEdit(newBot);
+            setCurrentPage('create');
+        }
     }
   };
 
@@ -236,8 +219,8 @@ const App: React.FC = () => {
   };
 
   const handleClearData = async () => {
-      if (currentUser && window.confirm("Are you sure you want to delete all your Humans, personas, and chat history? This cannot be undone.")) {
-        await clearUserData(currentUser.id);
+      if (window.confirm("Are you sure you want to delete all your Humans, personas, and chat history? This cannot be undone.")) {
+        await clearUserData();
         // Reset state locally as well
         setBots([]);
         setPersonas([]);
@@ -272,18 +255,19 @@ const App: React.FC = () => {
                     onSelectBot={handleSelectBot} 
                     onEditBot={handleEditBot}
                     onDeleteBot={handleDeleteBot}
+                    onCloneBot={handleCloneBot}
                     theme={theme}
                     toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
                     onOpenSettings={() => setIsSettingsOpen(true)}
                 />;
       case 'humans':
-        return <BotsPage bots={bots} onSelectBot={handleSelectBot} onEditBot={handleEditBot} onDeleteBot={handleDeleteBot} />;
+        return <BotsPage bots={bots} onSelectBot={handleSelectBot} onEditBot={handleEditBot} onDeleteBot={handleDeleteBot} onCloneBot={handleCloneBot} />;
       case 'create':
         return <CreationForm onSaveBot={handleSaveBot} onNavigate={handleNavigate} botToEdit={botToEdit} />;
       case 'images':
         return <ImageGeneratorPage />;
-      case 'scenario':
-        return <ScenarioGeneratorPage personas={personas} selectedAI={selectedAI} />;
+      case 'story':
+        return <ScenarioGeneratorPage bots={bots} selectedAI={selectedAI} />;
       case 'personas':
         return <PersonasPage personas={personas} bots={bots} onSave={handleSavePersona} onDelete={handleDeletePersona} onAssign={handleAssignPersona} />;
       case 'chat':
@@ -299,7 +283,7 @@ const App: React.FC = () => {
                     voicePreference={voicePreference}
                     onEdit={handleEditBot}
                     onStartNewChat={handleStartNewChat}
-                    currentUser={currentUser}
+                    currentUser={defaultUser}
                  />;
         }
         setCurrentPage('home');
@@ -308,14 +292,6 @@ const App: React.FC = () => {
         return null;
     }
   };
-
-  if (isLoading) {
-    return <div className="w-full h-full flex items-center justify-center bg-dark-bg text-white">Loading...</div>;
-  }
-
-  if (!currentUser) {
-    return <LoginPage onLogin={handleLogin} />;
-  }
 
   return (
     <div className={`w-full h-full max-w-md mx-auto flex flex-col font-sans shadow-2xl overflow-hidden relative ${theme}`}>
@@ -331,7 +307,6 @@ const App: React.FC = () => {
         onSetVoicePreference={setVoicePreference}
         hasConsented={hasConsented}
         onConsentChange={handleConsentChange}
-        onLogout={handleLogout}
       />
       <div className="flex-1 overflow-hidden">
         {renderPage()}

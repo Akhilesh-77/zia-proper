@@ -7,9 +7,10 @@ interface BotsPageProps {
   onSelectBot: (id: string) => void;
   onEditBot: (id: string) => void;
   onDeleteBot: (id: string) => void;
+  onCloneBot: (id: string) => void;
 }
 
-const BotsPage: React.FC<BotsPageProps> = ({ bots, onSelectBot, onEditBot, onDeleteBot }) => {
+const BotsPage: React.FC<BotsPageProps> = ({ bots, onSelectBot, onEditBot, onDeleteBot, onCloneBot }) => {
   return (
     <div className="h-full w-full flex flex-col p-4 bg-light-bg text-light-text dark:bg-dark-bg dark:text-dark-text">
       <header className="flex items-center mb-6 gap-2">
@@ -27,6 +28,7 @@ const BotsPage: React.FC<BotsPageProps> = ({ bots, onSelectBot, onEditBot, onDel
                 onChat={() => onSelectBot(bot.id)} 
                 onEdit={() => onEditBot(bot.id)}
                 onDelete={() => onDeleteBot(bot.id)}
+                onClone={() => onCloneBot(bot.id)}
               />
             ))}
           </div>

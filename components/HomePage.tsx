@@ -1,6 +1,7 @@
 import React from 'react';
 import type { BotProfile } from '../types';
 import BotCard from './BotCard';
+import TrendingBotCard from './TrendingBotCard';
 
 interface HomePageProps {
   bots: BotProfile[];
@@ -8,16 +9,46 @@ interface HomePageProps {
   onSelectBot: (id: string) => void;
   onEditBot: (id: string) => void;
   onDeleteBot: (id: string) => void;
+  onCloneBot: (id: string) => void;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
   onOpenSettings: () => void;
 }
 
-const HomePage: React.FC<HomePageProps> = ({ bots, botUsage, onSelectBot, onEditBot, onDeleteBot, theme, toggleTheme, onOpenSettings }) => {
+const HomePage: React.FC<HomePageProps> = ({ bots, botUsage, onSelectBot, onEditBot, onDeleteBot, onCloneBot, theme, toggleTheme, onOpenSettings }) => {
 
   const sortedBots = [...bots].sort((a, b) => (botUsage[b.id] || 0) - (botUsage[a.id] || 0));
 
-  const trendingBots = sortedBots.slice(0, 4);
+  const trendingBots = sortedBots.slice(0, 8);
+
+  const renderTrendingSection = (botList: BotProfile[]) => {
+    if (botList.length === 0) {
+      return (
+        <div>
+          <h2 className="text-xl font-semibold mb-4">Trending Humans</h2>
+          <div className="flex flex-col items-center justify-center text-center text-gray-500 py-10">
+            <p className="text-lg">No Humans to discover yet.</p>
+            <p>Create a Human and chat with it to see it here!</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        <h2 className="text-xl font-semibold mb-4">Trending Humans</h2>
+        <div className="flex overflow-x-auto space-x-4 pb-4 -mx-4 px-4 no-scrollbar">
+          {botList.map(bot => (
+            <TrendingBotCard
+              key={bot.id}
+              bot={bot}
+              onChat={() => onSelectBot(bot.id)}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   const renderBotGrid = (botList: BotProfile[], title: string) => {
     if (botList.length === 0 && title === "Trending Humans") {
@@ -43,6 +74,7 @@ const HomePage: React.FC<HomePageProps> = ({ bots, botUsage, onSelectBot, onEdit
                     onChat={() => onSelectBot(bot.id)} 
                     onEdit={() => onEditBot(bot.id)}
                     onDelete={() => onDeleteBot(bot.id)}
+                    onClone={() => onCloneBot(bot.id)}
                 />
                 ))}
             </div>
@@ -70,7 +102,7 @@ const HomePage: React.FC<HomePageProps> = ({ bots, botUsage, onSelectBot, onEdit
       </header>
       
       <main className="flex-1 overflow-y-auto pb-24 space-y-8">
-        {renderBotGrid(trendingBots, "Trending Humans")}
+        {renderTrendingSection(trendingBots)}
         {renderBotGrid(bots, "All Humans")}
       </main>
     </div>

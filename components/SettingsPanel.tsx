@@ -13,7 +13,6 @@ interface SettingsPanelProps {
   onSetVoicePreference: (voice: VoicePreference | null) => void;
   hasConsented: boolean;
   onConsentChange: (agreed: boolean) => void;
-  onLogout: () => void;
 }
 
 // FIX: Corrected the display names for Gemini models from 1.5 to 2.5 to match the actual models.
@@ -24,7 +23,7 @@ const aiModelOptions: { id: AIModelOption, name: string }[] = [
     { id: 'gemini-flash-lite-latest', name: 'Gemini Flash Lite' },
 ];
 
-const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, toggleTheme, onClearData, selectedAI, onSelectAI, voicePreference, onSetVoicePreference, hasConsented, onConsentChange, onLogout }) => {
+const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, toggleTheme, onClearData, selectedAI, onSelectAI, voicePreference, onSetVoicePreference, hasConsented, onConsentChange }) => {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isDisclaimerExpanded, setIsDisclaimerExpanded] = useState(false);
 
@@ -111,21 +110,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, t
                 </div>
 
                 <div className="bg-white/5 dark:bg-black/10 p-4 rounded-xl space-y-3">
-                    <p className="font-medium">Account & Data</p>
+                    <p className="font-medium">Data Management</p>
                     <button 
                         onClick={onClearData} 
                         className="w-full bg-red-600/80 text-white font-bold py-2 px-4 rounded-lg transition-colors hover:bg-red-500"
                     >
-                        Clear Current User's Data
+                        Clear All App Data
                     </button>
-                     {onLogout && (
-                        <button 
-                            onClick={onLogout}
-                            className="w-full bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition-colors hover:bg-gray-500"
-                        >
-                            Logout
-                        </button>
-                    )}
                 </div>
 
                 <div className="bg-white/5 dark:bg-black/10 p-4 rounded-xl">

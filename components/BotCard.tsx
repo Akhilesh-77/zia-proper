@@ -4,10 +4,10 @@ import { generateDynamicDescription } from '../services/geminiService';
 
 interface BotCardProps {
     bot: BotProfile;
-
     onChat: () => void;
     onEdit?: () => void;
     onDelete?: () => void;
+    onClone?: () => void;
 }
 
 const SwipeToChatButton: React.FC<{ botName: string; onSwiped: () => void; }> = ({ botName, onSwiped }) => {
@@ -124,7 +124,7 @@ const BotPreviewModal: React.FC<{ bot: BotProfile, onSwiped: () => void, onClose
     );
 }
 
-const BotCard: React.FC<BotCardProps> = ({ bot, onChat, onEdit, onDelete }) => {
+const BotCard: React.FC<BotCardProps> = ({ bot, onChat, onEdit, onDelete, onClone }) => {
     const [menuOpen, setMenuOpen] = useState(false);
     const [modalVisible, setModalVisible] = useState(false);
     const [dynamicDesc, setDynamicDesc] = useState<string | null>(null);
@@ -171,7 +171,7 @@ const BotCard: React.FC<BotCardProps> = ({ bot, onChat, onEdit, onDelete }) => {
                 </p>
             </div>
 
-            {(onEdit || onDelete) && (
+            {(onEdit || onDelete || onClone) && (
                 <div ref={menuRef} className="absolute top-5 right-5 z-10">
                     <button onClick={() => setMenuOpen(!menuOpen)} className="p-1 rounded-full bg-black/30 hover:bg-black/50 text-white">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
@@ -179,6 +179,7 @@ const BotCard: React.FC<BotCardProps> = ({ bot, onChat, onEdit, onDelete }) => {
                     {menuOpen && (
                         <div className="absolute right-0 mt-2 w-32 bg-gray-800 rounded-lg shadow-xl animate-fadeIn z-20">
                             {onEdit && <a href="#" onClick={(e) => { e.preventDefault(); onEdit(); setMenuOpen(false); }} className="block px-4 py-2 text-sm text-white hover:bg-accent rounded-t-lg">Edit</a>}
+                            {onClone && <a href="#" onClick={(e) => { e.preventDefault(); onClone?.(); setMenuOpen(false); }} className="block px-4 py-2 text-sm text-white hover:bg-accent">Clone</a>}
                             {onDelete && <a href="#" onClick={(e) => { e.preventDefault(); onDelete(); setMenuOpen(false); }} className="block px-4 py-2 text-sm text-white hover:bg-red-500 rounded-b-lg">Delete</a>}
                         </div>
                     )}
