@@ -6,12 +6,13 @@ import ChatView from './components/ChatView';
 import PersonasPage from './components/PersonasPage';
 import ImageGeneratorPage from './components/ImageGeneratorPage';
 import ScenarioGeneratorPage from './components/ScenarioGeneratorPage';
+import CodePromptGeneratorPage from './components/CodePromptGeneratorPage';
 import FooterNav from './components/FooterNav';
 import SettingsPanel from './components/SettingsPanel';
 import type { User, BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference } from './types';
 import { loadUserData, saveUserData, clearUserData } from './services/storageService';
 
-export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'story';
+export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'story' | 'code';
 
 // A default user object for the login-free experience
 const defaultUser: User = {
@@ -268,6 +269,8 @@ const App: React.FC = () => {
         return <ImageGeneratorPage />;
       case 'story':
         return <ScenarioGeneratorPage bots={bots} selectedAI={selectedAI} />;
+      case 'code':
+        return <CodePromptGeneratorPage />;
       case 'personas':
         return <PersonasPage personas={personas} bots={bots} onSave={handleSavePersona} onDelete={handleDeletePersona} onAssign={handleAssignPersona} />;
       case 'chat':

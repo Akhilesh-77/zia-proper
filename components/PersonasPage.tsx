@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { Persona, BotProfile } from '../types';
+import ImageCropper from './ImageCropper';
 
 interface AssignPersonaModalProps {
     persona: Persona;
@@ -71,6 +72,7 @@ const PersonasPage: React.FC<PersonasPageProps> = ({ personas, bots, onSave, onD
   const [description, setDescription] = useState('');
   const [personality, setPersonality] = useState('');
   const [photo, setPhoto] = useState<string | null>(null);
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   
   const inputClass = "w-full bg-white/10 dark:bg-black/10 p-3 rounded-2xl border border-white/20 dark:border-black/20 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-300 shadow-inner";
   const labelClass = "block text-sm font-medium mb-2";
@@ -78,7 +80,10 @@ const PersonasPage: React.FC<PersonasPageProps> = ({ personas, bots, onSave, onD
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const reader = new FileReader();
-      reader.onload = (event) => setPhoto(event.target?.result as string);
+      reader.onload = (event) => {
+        const result = event.target?.result as string;
+        setImageToCrop(result);
+      };
       reader.readAsDataURL(e.target.files[0]);
     }
   };
@@ -124,6 +129,17 @@ const PersonasPage: React.FC<PersonasPageProps> = ({ personas, bots, onSave, onD
                 bots={bots} 
                 onAssign={onAssign} 
                 onClose={() => setAssigningPersona(null)} 
+            />
+        )}
+        {imageToCrop && (
+            <ImageCropper
+                imageSrc={imageToCrop}
+                aspect={1}
+                onClose={() => setImageToCrop(null)}
+                onCropComplete={(croppedImage) => {
+                    setPhoto(croppedImage);
+                    setImageToCrop(null);
+                }}
             />
         )}
         <header className="flex items-center mb-6 gap-2">

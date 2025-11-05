@@ -5,25 +5,21 @@ interface ImageCropperProps {
     onCropComplete: (croppedImage: string) => void;
     onClose: () => void;
     aspect?: number;
+    outputShape?: 'rectangle' | 'circle';
 }
 
-const getCroppedImg = (image: HTMLImageElement, crop: {x: number, y: number, width: number, height: number}, aspect: number | undefined) => {
+const getCroppedImg = (image: HTMLImageElement, crop: {x: number, y: number, width: number, height: number}, outputShape: 'rectangle' | 'circle') => {
     const canvas = document.createElement('canvas');
     let outputWidth: number, outputHeight: number;
-
-    if (aspect) { // Fixed aspect ratio for backgrounds
-        outputWidth = 1080;
-        outputHeight = 1920;
-    } else { // Free-form for profile photos
-        const maxDimension = 1024; // Cap output resolution
-        const cropAspect = crop.width / crop.height;
-        if (crop.width >= crop.height) {
-            outputWidth = Math.min(crop.width, maxDimension);
-            outputHeight = outputWidth / cropAspect;
-        } else {
-            outputHeight = Math.min(crop.height, maxDimension);
-            outputWidth = outputHeight * cropAspect;
-        }
+    
+    const maxDimension = 1024; // Cap output resolution for performance/storage
+    const cropAspect = crop.width / crop.height;
+    if (crop.width >= crop.height) {
+        outputWidth = Math.min(crop.width, maxDimension);
+        outputHeight = outputWidth / cropAspect;
+    } else {
+        outputHeight = Math.min(crop.height, maxDimension);
+        outputWidth = outputHeight * cropAspect;
     }
 
     canvas.width = Math.round(outputWidth);
@@ -32,6 +28,14 @@ const getCroppedImg = (image: HTMLImageElement, crop: {x: number, y: number, wid
     const ctx = canvas.getContext('2d');
     if (!ctx) {
         throw new Error('Could not get canvas context');
+    }
+
+    if (outputShape === 'circle') {
+        ctx.beginPath();
+        // Create a circular clipping path
+        ctx.arc(canvas.width / 2, canvas.height / 2, Math.min(canvas.width, canvas.height) / 2, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
     }
 
     const scaleX = image.naturalWidth / image.width;
@@ -49,10 +53,11 @@ const getCroppedImg = (image: HTMLImageElement, crop: {x: number, y: number, wid
         canvas.height
     );
 
-    return canvas.toDataURL('image/jpeg', 0.92);
+    // Return PNG to support transparency for the circular crop
+    return canvas.toDataURL('image/png');
 };
 
-const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, onClose, aspect }) => {
+const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, onClose, aspect, outputShape = 'rectangle' }) => {
     const imgRef = useRef<HTMLImageElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -203,7 +208,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
 
     const handleCropConfirm = () => {
         if (imgRef.current && crop.width > 0) {
-            const croppedImageUrl = getCroppedImg(imgRef.current, crop, aspect);
+            const croppedImageUrl = getCroppedImg(imgRef.current, crop, outputShape);
             onCropComplete(croppedImageUrl);
         }
     };
@@ -236,6 +241,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
                             width: crop.width,
                             height: crop.height,
                             boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.6)',
+                            borderRadius: outputShape === 'circle' ? '50%' : '0'
                         }}
                         onMouseDown={(e) => handleMouseDown(e, 'move')}
                         onTouchStart={(e) => handleTouchStart(e, 'move')}

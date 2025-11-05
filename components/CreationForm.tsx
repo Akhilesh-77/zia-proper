@@ -88,6 +88,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
             <ImageCropper 
                 imageSrc={imageToCrop.src}
                 aspect={imageToCrop.type === 'photo' ? undefined : 9 / 16}
+                outputShape={'rectangle'}
                 onClose={() => setImageToCrop(null)}
                 onCropComplete={(croppedImage) => {
                     if (imageToCrop.type === 'photo') {

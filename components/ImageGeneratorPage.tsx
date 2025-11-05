@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { generateImage } from '../services/geminiService';
 import { loadUserData, saveUserData } from '../services/storageService';
+import ImageCropper from './ImageCropper';
 
 const ImageGeneratorPage: React.FC = () => {
     const [sourceImage, setSourceImage] = useState<string | null>(null);
@@ -9,6 +10,7 @@ const ImageGeneratorPage: React.FC = () => {
     const [savedImages, setSavedImages] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [imageToCrop, setImageToCrop] = useState<string | null>(null);
 
     useEffect(() => {
         const loadImages = async () => {
@@ -29,7 +31,7 @@ const ImageGeneratorPage: React.FC = () => {
         if (e.target.files && e.target.files[0]) {
             const reader = new FileReader();
             reader.onload = (event) => {
-                setSourceImage(event.target?.result as string);
+                setImageToCrop(event.target?.result as string);
                 setGeneratedImage(null);
                 setError(null);
             };
@@ -74,6 +76,16 @@ const ImageGeneratorPage: React.FC = () => {
 
     return (
         <div className="h-full w-full flex flex-col p-4 bg-light-bg text-light-text dark:bg-dark-bg dark:text-dark-text">
+            {imageToCrop && (
+                <ImageCropper
+                    imageSrc={imageToCrop}
+                    onClose={() => setImageToCrop(null)}
+                    onCropComplete={(croppedImage) => {
+                        setSourceImage(croppedImage);
+                        setImageToCrop(null);
+                    }}
+                />
+            )}
             <header className="flex items-center mb-6 gap-2">
                 <img src="https://i.postimg.cc/qRB2Gnw2/Gemini-Generated-Image-vfkohrvfkohrvfko-1.png" alt="Zia.ai Logo" className="h-8 w-8"/>
                 <h1 className="text-3xl font-bold">Image Generator</h1>
