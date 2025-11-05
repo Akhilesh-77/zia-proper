@@ -1,5 +1,5 @@
 import { GoogleGenAI, Content, Part, Modality } from "@google/genai";
-import { ChatMessage, AIModelOption } from "../types";
+import { ChatMessage, AIModelOption, BotProfile } from "../types";
 import { xyz } from "./xyz";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -122,12 +122,12 @@ const generateText = async (
 
 export const generateBotResponse = async (
     history: ChatMessage[], 
-    personality: string, 
+    botProfile: Pick<BotProfile, 'personality' | 'isSpicy'>, 
     selectedAI: AIModelOption
 ): Promise<string> => {
     try {
-        // FIX: The xyz function is called here to enhance the personality before generating text.
-        const enhancedPersonality = xyz(history, history[history.length - 1]?.text || '', personality);
+        // The xyz function is called here to enhance the personality before generating text.
+        const enhancedPersonality = xyz(history, history[history.length - 1]?.text || '', botProfile.personality, botProfile.isSpicy || false);
         return await generateText(enhancedPersonality, history, selectedAI);
     } catch (error) {
          return error instanceof Error ? error.message : "An unknown error occurred.";

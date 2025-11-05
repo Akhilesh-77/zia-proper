@@ -24,7 +24,7 @@ const HomePage: React.FC<HomePageProps> = ({ bots, botUsage, onSelectBot, onEdit
       return (
         <div className="flex flex-col items-center justify-center text-center text-gray-500 py-10">
             <p className="text-lg">No Humans to discover yet.</p>
-            <p>Create a bot and chat with it to see it here!</p>
+            <p>Create a Human and chat with it to see it here!</p>
         </div>
       )
     }
@@ -70,8 +70,8 @@ const HomePage: React.FC<HomePageProps> = ({ bots, botUsage, onSelectBot, onEdit
       </header>
       
       <main className="flex-1 overflow-y-auto pb-24 space-y-8">
-        {renderBotGrid(trendingBots, "Trending Bots")}
-        {renderBotGrid(bots, "All Bots")}
+        {renderBotGrid(trendingBots, "Trending Humans")}
+        {renderBotGrid(bots, "All Humans")}
       </main>
     </div>
   );

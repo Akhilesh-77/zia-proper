@@ -32,7 +32,7 @@ const BotsPage: React.FC<BotsPageProps> = ({ bots, onSelectBot, onEditBot, onDel
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-center text-gray-500">
-            <p className="text-lg">No bots yet.</p>
+            <p className="text-lg">No Humans yet.</p>
             <p>Tap the 'Create' button below to make one!</p>
           </div>
         )}

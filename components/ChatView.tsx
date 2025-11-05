@@ -12,6 +12,46 @@ const PhotoViewer: React.FC<{ src: string; onClose: () => void }> = ({ src, onCl
     </div>
 );
 
+const ChatSettingsModal: React.FC<{
+    bot: BotProfile;
+    onClose: () => void;
+    onSave: (newBrightness: number) => void;
+    onBrightnessChange: (newBrightness: number) => void;
+    tempBrightness: number;
+}> = ({ bot, onClose, onSave, onBrightnessChange, tempBrightness }) => {
+    
+    const handleSave = () => {
+        onSave(tempBrightness);
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate-fadeIn p-4" onClick={onClose}>
+            <div className="bg-dark-bg rounded-2xl shadow-2xl relative max-w-md w-full mx-auto p-6" onClick={(e) => e.stopPropagation()}>
+                <h2 className="text-xl font-bold mb-4">Chat Settings</h2>
+                {bot.chatBackground && (
+                    <div>
+                        <label htmlFor="brightness-slider" className="block text-sm font-medium mb-2">Background Brightness</label>
+                        <input
+                            id="brightness-slider"
+                            type="range"
+                            min="0"
+                            max="200"
+                            value={tempBrightness}
+                            onChange={(e) => onBrightnessChange(parseInt(e.target.value, 10))}
+                            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-accent"
+                        />
+                        <div className="text-center text-xs text-gray-400 mt-1">{tempBrightness}%</div>
+                    </div>
+                )}
+                 <div className="flex gap-2 mt-6">
+                    <button type="button" onClick={onClose} className="flex-1 bg-gray-500 text-white font-bold py-3 px-4 rounded-2xl transition-colors">Cancel</button>
+                    <button type="button" onClick={handleSave} className="flex-1 bg-accent text-white font-bold py-3 px-4 rounded-2xl transition-colors">Save</button>
+                </div>
+            </div>
+        </div>
+    )
+}
 
 interface ChatViewProps {
   bot: BotProfile & { persona?: Persona | null };
@@ -19,19 +59,22 @@ interface ChatViewProps {
   chatHistory: ChatMessage[];
   onNewMessage: (message: ChatMessage) => void;
   onUpdateHistory: (newHistory: ChatMessage[]) => void;
+  onUpdateBot: (bot: BotProfile) => void;
   selectedAI: AIModelOption;
   voicePreference: VoicePreference | null;
   onEdit: (id: string) => void;
   onStartNewChat: (id: string) => void;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMessage, onUpdateHistory, selectedAI, voicePreference, onEdit, onStartNewChat }) => {
+const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMessage, onUpdateHistory, onUpdateBot, selectedAI, voicePreference, onEdit, onStartNewChat }) => {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [photoToView, setPhotoToView] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [tempBrightness, setTempBrightness] = useState(bot.chatBackgroundBrightness ?? 100);
   const menuRef = useRef<HTMLDivElement>(null);
   
   useEffect(() => {
@@ -101,8 +144,7 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
     setIsTyping(true);
 
     try {
-      // FIX: The xyz function is called within generateBotResponse, so we pass the base personality here.
-      const botResponseText = await generateBotResponse(newHistory, bot.personality, selectedAI);
+      const botResponseText = await generateBotResponse(newHistory, { personality: bot.personality, isSpicy: bot.isSpicy }, selectedAI);
 
       const finalBotMessage: ChatMessage = {
         id: `bot-${Date.now()}`,
@@ -144,8 +186,7 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
       const historyForRegen = chatHistory.slice(0, messageIndex);
       setIsTyping(true);
       try {
-          // FIX: The xyz function is called within generateBotResponse, so we pass the base personality here.
-          const botResponseText = await generateBotResponse(historyForRegen, bot.personality, selectedAI);
+          const botResponseText = await generateBotResponse(historyForRegen, { personality: bot.personality, isSpicy: bot.isSpicy }, selectedAI);
           
           const newHistory = [...chatHistory];
           newHistory[messageIndex] = { ...newHistory[messageIndex], text: botResponseText, timestamp: Date.now() };
@@ -165,7 +206,7 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
     const parts = text.split(/(\*.*?\*)/g);
     return parts.map((part, index) => {
       if (part.startsWith('*') && part.endsWith('*')) {
-        return <em key={index} className="text-accent italic action-text-tilted">{part.slice(1, -1)}</em>;
+        return <em key={index} className="text-accent italic">{part.slice(1, -1)}</em>;
       }
       return part;
     });
@@ -183,13 +224,35 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
     setIsMenuOpen(false);
   };
 
+  const handleOpenSettings = () => {
+    setTempBrightness(bot.chatBackgroundBrightness ?? 100);
+    setIsSettingsOpen(true);
+    setIsMenuOpen(false);
+  };
+  
+  const handleSaveSettings = (newBrightness: number) => {
+    onUpdateBot({ ...bot, chatBackgroundBrightness: newBrightness });
+  };
+
   return (
     <div className="h-full w-full flex flex-col bg-light-bg text-light-text dark:bg-dark-bg dark:text-dark-text relative">
         {photoToView && <PhotoViewer src={photoToView} onClose={() => setPhotoToView(null)} />}
+        {isSettingsOpen && (
+            <ChatSettingsModal 
+                bot={bot}
+                onClose={() => setIsSettingsOpen(false)}
+                onSave={handleSaveSettings}
+                onBrightnessChange={setTempBrightness}
+                tempBrightness={tempBrightness}
+            />
+        )}
         {bot.chatBackground && (
             <div 
-              style={{backgroundImage: `url(${bot.chatBackground})`}} 
-              className="fixed inset-0 w-full h-full bg-cover bg-center z-0 opacity-85 max-w-md mx-auto" >
+              style={{
+                  backgroundImage: `url(${bot.chatBackground})`,
+                  filter: `brightness(${isSettingsOpen ? tempBrightness : (bot.chatBackgroundBrightness ?? 100)}%)`
+              }} 
+              className="fixed inset-0 w-full h-full bg-cover bg-center z-0 opacity-85 max-w-md mx-auto transition-all duration-300" >
                 <div className="absolute inset-0 w-full h-full bg-black/50"></div>
             </div>
         )}
@@ -208,7 +271,8 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
             </button>
             {isMenuOpen && (
                 <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-lg shadow-xl animate-fadeIn z-30">
-                    <a href="#" onClick={handleEditClick} className="block px-4 py-2 text-sm text-white hover:bg-accent rounded-t-lg">Edit Bot</a>
+                    <a href="#" onClick={handleEditClick} className="block px-4 py-2 text-sm text-white hover:bg-accent rounded-t-lg">Edit Human</a>
+                    <a href="#" onClick={handleOpenSettings} className="block px-4 py-2 text-sm text-white hover:bg-accent">Chat Settings</a>
                     <a href="#" onClick={handleNewChatClick} className="block px-4 py-2 text-sm text-white hover:bg-accent rounded-b-lg">Start New Chat</a>
                 </div>
             )}

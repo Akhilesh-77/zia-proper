@@ -1,7 +1,14 @@
-
+import type { BotProfile } from './types';
 
 export type AIModelOption = 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-flash-latest' | 'gemini-flash-lite-latest';
 export type VoicePreference = string;
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  photoUrl: string;
+}
 
 export interface BotProfile {
   id: string;
@@ -12,7 +19,9 @@ export interface BotProfile {
   gif?: string | null; // base64 data URL
   scenario: string;
   chatBackground?: string | null; // base64 data URL
+  chatBackgroundBrightness?: number; // Brightness percentage (e.g., 100)
   personaId?: string | null;
+  isSpicy?: boolean;
 }
 
 export interface ChatMessage {

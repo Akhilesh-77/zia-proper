@@ -32,7 +32,7 @@ const AssignPersonaModal: React.FC<AssignPersonaModalProps> = ({ persona, bots, 
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate-fadeIn p-4" onClick={onClose}>
             <div className="bg-dark-bg rounded-2xl shadow-2xl relative max-w-md w-full mx-auto p-6" onClick={(e) => e.stopPropagation()}>
                 <h2 className="text-xl font-bold mb-4">Assign '{persona.name}'</h2>
-                <p className="text-sm text-gray-400 mb-4">Select which bots should use this persona. This will override their current personality prompt.</p>
+                <p className="text-sm text-gray-400 mb-4">Select which Humans should use this persona. This will override their current personality prompt.</p>
                 <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
                     {bots.map(bot => (
                         <label key={bot.id} className="flex items-center bg-white/5 p-3 rounded-lg cursor-pointer hover:bg-white/10">

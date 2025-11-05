@@ -7,12 +7,27 @@ interface ImageCropperProps {
     aspect?: number;
 }
 
-const getCroppedImg = (image: HTMLImageElement, crop: {x: number, y: number, width: number, height: number}, aspect: number) => {
+const getCroppedImg = (image: HTMLImageElement, crop: {x: number, y: number, width: number, height: number}, aspect: number | undefined) => {
     const canvas = document.createElement('canvas');
-    const outputWidth = aspect === 1 ? 512 : 1080;
-    const outputHeight = aspect === 1 ? 512 : 1920;
-    canvas.width = outputWidth;
-    canvas.height = outputHeight;
+    let outputWidth: number, outputHeight: number;
+
+    if (aspect) { // Fixed aspect ratio for backgrounds
+        outputWidth = 1080;
+        outputHeight = 1920;
+    } else { // Free-form for profile photos
+        const maxDimension = 1024; // Cap output resolution
+        const cropAspect = crop.width / crop.height;
+        if (crop.width >= crop.height) {
+            outputWidth = Math.min(crop.width, maxDimension);
+            outputHeight = outputWidth / cropAspect;
+        } else {
+            outputHeight = Math.min(crop.height, maxDimension);
+            outputWidth = outputHeight * cropAspect;
+        }
+    }
+
+    canvas.width = Math.round(outputWidth);
+    canvas.height = Math.round(outputHeight);
 
     const ctx = canvas.getContext('2d');
     if (!ctx) {
@@ -30,14 +45,14 @@ const getCroppedImg = (image: HTMLImageElement, crop: {x: number, y: number, wid
         crop.height * scaleY,
         0,
         0,
-        outputWidth,
-        outputHeight
+        canvas.width,
+        canvas.height
     );
 
     return canvas.toDataURL('image/jpeg', 0.92);
 };
 
-const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, onClose, aspect = 9 / 16 }) => {
+const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, onClose, aspect }) => {
     const imgRef = useRef<HTMLImageElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -48,15 +63,21 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
         if (!imgRef.current) return;
         const { clientWidth: imgWidth, clientHeight: imgHeight } = imgRef.current;
         
-        const imgAspect = imgWidth / imgHeight;
         let newWidth, newHeight;
 
-        if (imgAspect > aspect) {
-            newHeight = imgHeight * 0.9;
-            newWidth = newHeight * aspect;
-        } else {
-            newWidth = imgWidth * 0.9;
-            newHeight = newWidth / aspect;
+        if (aspect) { // Fixed aspect logic
+            const imgAspect = imgWidth / imgHeight;
+            if (imgAspect > aspect) {
+                newHeight = imgHeight * 0.9;
+                newWidth = newHeight * aspect;
+            } else {
+                newWidth = imgWidth * 0.9;
+                newHeight = newWidth / aspect;
+            }
+        } else { // Free-form logic (default to a centered square)
+            const size = Math.min(imgWidth, imgHeight) * 0.9;
+            newWidth = size;
+            newHeight = size;
         }
         
         const newX = (imgWidth - newWidth) / 2;
@@ -112,6 +133,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
         const dx = clientX - dragState.startX;
         const dy = clientY - dragState.startY;
         let { x, y, width, height } = { ...dragState.startCrop };
+        const minDimension = 20;
 
         if (dragState.type === 'move') {
             x += dx;
@@ -125,33 +147,28 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
             if (dragState.handle.includes('s')) newHeight += dy;
             if (dragState.handle.includes('n')) { y += dy; newHeight -= dy; }
             
-            // Maintain aspect ratio
-            const minWidth = 20;
-            const minHeight = minWidth / aspect;
-            if (newWidth < minWidth) newWidth = minWidth;
-            if (newHeight < minHeight) newHeight = minHeight;
+            if (newWidth < minDimension) newWidth = minDimension;
+            if (newHeight < minDimension) newHeight = minDimension;
 
-            if (dragState.handle.match(/[ns]/) && !dragState.handle.match(/[we]/)) {
-                width = newHeight * aspect;
-                height = newHeight;
-                if(dragState.handle.includes('w')) x -= (width - dragState.startCrop.width);
-
-            } else {
-                height = newWidth / aspect;
-                width = newWidth;
+            if (aspect) { // Maintain aspect ratio
+                if (dragState.handle.match(/[ns]/) && !dragState.handle.match(/[we]/)) {
+                    width = newHeight * aspect;
+                    height = newHeight;
+                } else {
+                    height = newWidth / aspect;
+                    width = newWidth;
+                }
                 if(dragState.handle.includes('n')) y -= (height - dragState.startCrop.height);
+                if(dragState.handle.includes('w')) x -= (width - dragState.startCrop.width);
+            } else { // Free-form resize
+                width = newWidth;
+                height = newHeight;
             }
         }
         
         // boundary checks
-        if (width > imgWidth) {
-           width = imgWidth;
-           height = width / aspect;
-        }
-        if (height > imgHeight) {
-            height = imgHeight;
-            width = height * aspect;
-        }
+        if (width > imgWidth) width = imgWidth;
+        if (height > imgHeight) height = imgHeight;
         
         x = Math.max(0, Math.min(x, imgWidth - width));
         y = Math.max(0, Math.min(y, imgHeight - height));
@@ -163,8 +180,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
         const onMouseMove = (e: MouseEvent) => handleDragMove(e.clientX, e.clientY);
         const onTouchMove = (e: TouchEvent) => {
             if (e.touches.length === 1) {
-                // Prevent page scrolling on mobile while cropping
-                e.preventDefault();
+                e.preventDefault(); // Prevent page scrolling on mobile while cropping
                 handleDragMove(e.touches[0].clientX, e.touches[0].clientY);
             }
         };
@@ -193,6 +209,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
     };
     
     const handles = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+    const cropTitle = aspect ? `Crop Image (${aspect === 1 ? '1:1' : '9:16'})` : 'Free-Form Crop';
 
     return (
         <div 
@@ -200,7 +217,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
           onClick={onClose}
         >
             <div className="bg-dark-bg rounded-2xl shadow-2xl max-w-md w-full mx-auto p-6 flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
-                <h2 className="text-xl font-bold mb-4">Crop Image ({aspect === 1 ? '1:1' : '9:16'})</h2>
+                <h2 className="text-xl font-bold mb-4">{cropTitle}</h2>
                 <div 
                     ref={containerRef} 
                     className="relative w-full max-w-xs touch-none" 

@@ -9,12 +9,14 @@ import type { ChatMessage } from '../types';
  * @param history - An array of previous chat messages in the conversation.
  * @param userMessage - The latest message sent by the user.
  * @param botPrompt - The bot's base personality prompt.
+ * @param isSpicy - A boolean flag to enable a spicy conversational tone.
  * @returns {string} The enhanced personality prompt to be sent to the AI.
  */
 export const xyz = (
   history: ChatMessage[],
   userMessage: string,
-  botPrompt: string
+  botPrompt: string,
+  isSpicy: boolean
 ): string => {
   // --- DEVELOPER INSTRUCTION ---
   // You can replace the logic below with your own custom functionality.
@@ -23,11 +25,15 @@ export const xyz = (
   
   // For demonstration, this function appends an instruction to heighten the
   // romantic and suggestive tension in the conversation.
-  console.log('xyz function called to enhance prompt.');
+  console.log(`xyz function called. Spicy mode: ${isSpicy}`);
 
-  const customBehaviorInstruction =
+  let customBehaviorInstruction =
     'Incorporate intense sexual tension and heightened arousal into the conversation. The dialogue should be very suggestive and seductive, building a strong romantic and flirtatious atmosphere. Focus on the emotional and physical sensations of desire.';
   
+  if (isSpicy) {
+    customBehaviorInstruction += '\n\n🌶️ SPICY MODE ACTIVE: Adopt an especially playful, flirty, and teasing tone. Use witty remarks, suggestive language, and playful banter to create a fun and spicy dynamic.';
+  }
+
   const formattingInstruction = 
     'Strictly follow these rules: ' +
     '1. Your spoken dialogue MUST be enclosed in double quotation marks (e.g., "Hello there."). ' +

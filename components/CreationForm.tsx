@@ -4,7 +4,7 @@ import ImageCropper from './ImageCropper';
 
 interface CreationPageProps {
   onSaveBot: (profile: Omit<BotProfile, 'id'> | BotProfile) => void;
-  onNavigate: (page: 'bots' | 'personas') => void;
+  onNavigate: (page: 'humans' | 'personas') => void;
   botToEdit: BotProfile | null;
 }
 
@@ -17,6 +17,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
   const [scenario, setScenario] = useState('');
   const [chatBackground, setChatBackground] = useState<string | null>(null);
   const [imageToCrop, setImageToCrop] = useState<{ src: string, type: 'photo' | 'background' } | null>(null);
+  const [isSpicy, setIsSpicy] = useState(false);
 
   const isEditing = !!botToEdit;
 
@@ -29,6 +30,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
       setGif(botToEdit.gif || null);
       setScenario(botToEdit.scenario);
       setChatBackground(botToEdit.chatBackground || null);
+      setIsSpicy(botToEdit.isSpicy || false);
     }
   }, [botToEdit, isEditing]);
 
@@ -54,14 +56,25 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
       return;
     }
     
-    const botData = { name, description, personality, photo, gif, scenario, chatBackground, personaId: botToEdit?.personaId };
+    const botData = { 
+        name, 
+        description, 
+        personality, 
+        photo, 
+        gif, 
+        scenario, 
+        chatBackground, 
+        personaId: botToEdit?.personaId, 
+        isSpicy,
+        chatBackgroundBrightness: botToEdit?.chatBackgroundBrightness
+    };
     
     if (isEditing) {
-        onSaveBot({ ...botData, id: botToEdit.id });
+        onSaveBot({ ...botToEdit, ...botData });
     } else {
         onSaveBot(botData);
     }
-    onNavigate('bots');
+    onNavigate('humans');
   };
 
   const inputClass = "w-full bg-white/10 dark:bg-black/10 p-3 rounded-2xl border border-white/20 dark:border-black/20 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-300 shadow-inner";
@@ -72,7 +85,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
        {imageToCrop && (
             <ImageCropper 
                 imageSrc={imageToCrop.src}
-                aspect={imageToCrop.type === 'photo' ? 1 : 9 / 16}
+                aspect={imageToCrop.type === 'photo' ? undefined : 9 / 16}
                 onClose={() => setImageToCrop(null)}
                 onCropComplete={(croppedImage) => {
                     if (imageToCrop.type === 'photo') {
@@ -85,24 +98,24 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
             />
         )}
       <header className="flex items-center mb-6 text-center">
-        <h1 className="text-xl font-bold flex-1">{isEditing ? 'Edit Bot' : 'Create New Bot'}</h1>
+        <h1 className="text-xl font-bold flex-1">{isEditing ? 'Edit Human' : 'Create New Human'}</h1>
       </header>
       
       <form onSubmit={handleSubmit} className="space-y-6 flex-1 overflow-y-auto pb-24">
         <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="photo-upload" className={labelClass}>Bot Photo *</label>
+              <label htmlFor="photo-upload" className={labelClass}>Human Photo *</label>
               <input id="photo-upload" type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'photo')} className="hidden" />
               <label htmlFor="photo-upload" className="cursor-pointer block w-full h-32 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center">
                 {photo ? (
-                  <img src={photo} alt="Bot preview" className="h-full w-full object-cover rounded-2xl" />
+                  <img src={photo} alt="Human preview" className="h-full w-full object-cover rounded-2xl" />
                 ) : (
                   <span className="text-gray-400 text-center text-sm p-2">Tap to upload</span>
                 )}
               </label>
             </div>
             <div>
-              <label htmlFor="gif-upload" className={labelClass}>Bot GIF</label>
+              <label htmlFor="gif-upload" className={labelClass}>Human GIF</label>
               <input id="gif-upload" type="file" accept="image/gif" onChange={(e) => handleFileUpload(e, 'gif')} className="hidden" />
               <label htmlFor="gif-upload" className="cursor-pointer block w-full h-32 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center">
                 {gif ? (
@@ -125,7 +138,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
             </label>
         </div>
         <div>
-          <label htmlFor="name" className={labelClass}>Bot Name *</label>
+          <label htmlFor="name" className={labelClass}>Human Name *</label>
           <input id="name" type="text" value={name} onChange={e => setName(e.target.value)} className={inputClass} required />
         </div>
         <div>
@@ -134,15 +147,28 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
         </div>
          <div>
           <label htmlFor="scenario" className={labelClass}>Scenario (Opening Message)</label>
-          <textarea id="scenario" value={scenario} onChange={e => setScenario(e.target.value)} className={inputClass} rows={3} placeholder="The bot's first message to the user..." />
+          <textarea id="scenario" value={scenario} onChange={e => setScenario(e.target.value)} className={inputClass} rows={3} placeholder="The Human's first message to the user..." />
         </div>
         <div>
-          <label htmlFor="personality" className={labelClass}>Bot Personality Prompt *</label>
-          <textarea id="personality" value={personality} onChange={e => setPersonality(e.target.value)} className={inputClass} rows={8} required placeholder="Describe the bot's character, traits, and how it should speak..." />
-          <p className="text-xs text-gray-500 mt-1">You can create reusable personalities on the 'Personas' page and assign them to bots.</p>
+          <label htmlFor="personality" className={labelClass}>Human Personality Prompt *</label>
+          <textarea id="personality" value={personality} onChange={e => setPersonality(e.target.value)} className={inputClass} rows={8} required placeholder="Describe the Human's character, traits, and how it should speak..." />
+          <p className="text-xs text-gray-500 mt-1">You can create reusable personalities on the 'Personas' page and assign them to Humans.</p>
         </div>
+        
+        <div>
+          <label htmlFor="spicy-toggle" className="flex items-center justify-between cursor-pointer p-3 bg-white/5 dark:bg-black/10 rounded-2xl">
+            <span className="font-medium text-light-text dark:text-dark-text">Spicy Mode 🌶️</span>
+            <div className="relative">
+                <input id="spicy-toggle" type="checkbox" className="sr-only" checked={isSpicy} onChange={() => setIsSpicy(!isSpicy)} />
+                <div className="block bg-white/20 dark:bg-black/20 w-14 h-8 rounded-full"></div>
+                <div className={`absolute left-1 top-1 bg-white dark:bg-gray-400 w-6 h-6 rounded-full transition-transform duration-300 ease-in-out ${isSpicy ? 'transform translate-x-6 bg-accent' : ''}`}></div>
+            </div>
+          </label>
+           <p className="text-xs text-gray-500 mt-1 pl-1">When enabled, the bot gains a playful, flirty, or spicy tone.</p>
+        </div>
+
         <button type="submit" className="w-full bg-accent text-white font-bold py-4 px-4 rounded-2xl text-lg transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-accent/50 shadow-lg hover:shadow-accent/20">
-          {isEditing ? 'Update Bot' : 'Save Bot'}
+          {isEditing ? 'Update Human' : 'Save Human'}
         </button>
       </form>
     </div>

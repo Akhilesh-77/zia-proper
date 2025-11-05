@@ -8,11 +8,15 @@ import ImageGeneratorPage from './components/ImageGeneratorPage';
 import ScenarioGeneratorPage from './components/ScenarioGeneratorPage';
 import FooterNav from './components/FooterNav';
 import SettingsPanel from './components/SettingsPanel';
-import type { BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference } from './types';
+import LoginPage from './components/LoginPage';
+import type { User, BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference } from './types';
 
-export type Page = 'home' | 'bots' | 'create' | 'images' | 'personas' | 'chat' | 'scenario';
+export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'scenario';
 
 const App: React.FC = () => {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [bots, setBots] = useState<BotProfile[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
@@ -26,79 +30,115 @@ const App: React.FC = () => {
   const [voicePreference, setVoicePreference] = useState<VoicePreference | null>(null);
   const [hasConsented, setHasConsented] = useState<boolean>(false);
 
-  // Load data from localStorage on initial render
+  // Check for a logged-in user on initial load
   useEffect(() => {
     try {
-      const savedBots = localStorage.getItem('bots');
-      if (savedBots) setBots(JSON.parse(savedBots));
-      
-      const savedPersonas = localStorage.getItem('personas');
-      if (savedPersonas) setPersonas(JSON.parse(savedPersonas));
-      
-      const savedHistories = localStorage.getItem('chatHistories');
-      if (savedHistories) setChatHistories(JSON.parse(savedHistories));
-
-      const savedUsage = localStorage.getItem('botUsage');
-      if (savedUsage) setBotUsage(JSON.parse(savedUsage));
-
-      const savedTheme = localStorage.getItem('theme');
-      if (savedTheme === 'light' || savedTheme === 'dark') {
-          setTheme(savedTheme);
-      } else {
-          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          setTheme(prefersDark ? 'dark' : 'light');
+      const savedUser = localStorage.getItem('currentUser');
+      if (savedUser) {
+        const user = JSON.parse(savedUser);
+        setCurrentUser(user);
+        loadUserData(user.id);
       }
-
-      const savedAI = localStorage.getItem('selectedAI');
-      const availableModels: AIModelOption[] = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-flash-lite-latest'];
-      if (savedAI && availableModels.includes(savedAI as AIModelOption)) {
-          setSelectedAI(savedAI as AIModelOption);
-      }
-      
-      const savedVoice = localStorage.getItem('voicePreference');
-      if (savedVoice) {
-          setVoicePreference(savedVoice as VoicePreference);
-      }
-
-      const savedConsent = localStorage.getItem('hasConsented');
-      if (savedConsent) {
-          setHasConsented(JSON.parse(savedConsent));
-      }
-
     } catch (error) {
-        console.error("Failed to load data from localStorage", error);
+      console.error("Failed to load user session", error);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
-  // Save data to localStorage whenever it changes
-  useEffect(() => {
+  const loadUserData = (userId: string) => {
     try {
-        localStorage.setItem('bots', JSON.stringify(bots));
-        localStorage.setItem('personas', JSON.stringify(personas));
-        localStorage.setItem('chatHistories', JSON.stringify(chatHistories));
-        localStorage.setItem('botUsage', JSON.stringify(botUsage));
-        localStorage.setItem('theme', theme);
-        localStorage.setItem('selectedAI', selectedAI);
-        if(voicePreference) {
-            localStorage.setItem('voicePreference', voicePreference);
-        } else {
-            localStorage.removeItem('voicePreference');
-        }
-        localStorage.setItem('hasConsented', JSON.stringify(hasConsented));
+      const get = (key: string) => localStorage.getItem(`${key}_${userId}`);
+      
+      const savedBots = get('bots');
+      if (savedBots) setBots(JSON.parse(savedBots));
 
+      const savedPersonas = get('personas');
+      if (savedPersonas) setPersonas(JSON.parse(savedPersonas));
 
-        if (theme === 'dark') {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
+      const savedHistories = get('chatHistories');
+      if (savedHistories) setChatHistories(JSON.parse(savedHistories));
+
+      const savedUsage = get('botUsage');
+      if (savedUsage) setBotUsage(JSON.parse(savedUsage));
+
+      const savedTheme = get('theme');
+      const themeValue = savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : 'dark';
+      setTheme(themeValue);
+      document.documentElement.classList.toggle('dark', themeValue === 'dark');
+
+      const savedAI = get('selectedAI');
+      const availableModels: AIModelOption[] = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-flash-lite-latest'];
+      if (savedAI && availableModels.includes(savedAI as AIModelOption)) {
+        setSelectedAI(savedAI as AIModelOption);
+      }
+
+      const savedVoice = get('voicePreference');
+      if (savedVoice) setVoicePreference(savedVoice as VoicePreference);
+
+      const savedConsent = get('hasConsented');
+      if (savedConsent) setHasConsented(JSON.parse(savedConsent));
+
     } catch (error) {
-        console.error("Failed to save data to localStorage", error);
+      console.error(`Failed to load data for user ${userId}`, error);
     }
-  }, [bots, personas, chatHistories, botUsage, theme, selectedAI, voicePreference, hasConsented]);
+  };
+
+  // Save data to localStorage whenever it changes, scoped to the current user
+  useEffect(() => {
+    if (!currentUser) return;
+    try {
+      const set = (key: string, value: any) => localStorage.setItem(`${key}_${currentUser.id}`, JSON.stringify(value));
+
+      set('bots', bots);
+      set('personas', personas);
+      set('chatHistories', chatHistories);
+      set('botUsage', botUsage);
+      localStorage.setItem(`theme_${currentUser.id}`, theme);
+      localStorage.setItem(`selectedAI_${currentUser.id}`, selectedAI);
+      if (voicePreference) {
+        localStorage.setItem(`voicePreference_${currentUser.id}`, voicePreference);
+      } else {
+        localStorage.removeItem(`voicePreference_${currentUser.id}`);
+      }
+      set('hasConsented', hasConsented);
+
+      document.documentElement.classList.toggle('dark', theme === 'dark');
+    } catch (error) {
+      console.error("Failed to save data to localStorage", error);
+    }
+  }, [bots, personas, chatHistories, botUsage, theme, selectedAI, voicePreference, hasConsented, currentUser]);
+
+  const handleLogin = (user: User) => {
+    setCurrentUser(user);
+    localStorage.setItem('currentUser', JSON.stringify(user));
+    loadUserData(user.id); // Load or initialize data for the new user
+  };
+
+  const handleLogout = () => {
+    if (window.confirm("Are you sure you want to log out?")) {
+        // Clear user-specific data from local storage for privacy
+        if (currentUser) {
+            Object.keys(localStorage).forEach(key => {
+                if (key.endsWith(`_${currentUser.id}`)) {
+                    localStorage.removeItem(key);
+                }
+            });
+        }
+        localStorage.removeItem('currentUser');
+        setCurrentUser(null);
+        // Reset state
+        setBots([]);
+        setPersonas([]);
+        setChatHistories({});
+        setBotUsage({});
+        setCurrentPage('home');
+        setIsSettingsOpen(false);
+    }
+  };
 
   const handleNavigate = (page: Page) => {
-    if ((page === 'create') && !hasConsented) {
+    if ((page === 'create' || page === 'humans') && !hasConsented) {
         alert("Please agree to the disclaimer in the settings to continue.");
         setIsSettingsOpen(true);
         return;
@@ -126,10 +166,7 @@ const App: React.FC = () => {
           sender: 'bot',
           timestamp: Date.now(),
         };
-        setChatHistories(prev => ({
-          ...prev,
-          [id]: [initialMessage],
-        }));
+        setChatHistories(prev => ({ ...prev, [id]: [initialMessage] }));
       }
     }
     setSelectedBotId(id);
@@ -146,7 +183,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteBot = (id: string) => {
-    if (window.confirm("Are you sure you want to delete this bot?")) {
+    if (window.confirm("Are you sure you want to delete this Human?")) {
         setBots(prev => prev.filter(b => b.id !== id));
         setChatHistories(prev => {
             const newHistories = { ...prev };
@@ -176,7 +213,7 @@ const App: React.FC = () => {
   };
 
   const handleDeletePersona = (id: string) => {
-    if (window.confirm("Are you sure you want to delete this persona? This will not affect bots currently using it, but they will no longer be linked.")) {
+    if (window.confirm("Are you sure you want to delete this persona? This will not affect Humans currently using it, but they will no longer be linked.")) {
         setPersonas(prev => prev.filter(p => p.id !== id));
         setBots(prev => prev.map(b => b.personaId === id ? { ...b, personaId: null } : b));
     }
@@ -221,15 +258,11 @@ const App: React.FC = () => {
   };
 
   const handleClearData = () => {
-      if (window.confirm("Are you sure you want to delete all your bots, personas, and chat history? This cannot be undone.")) {
+      if (window.confirm("Are you sure you want to delete all your Humans, personas, and chat history? This cannot be undone.")) {
         setBots([]);
         setPersonas([]);
         setChatHistories({});
         setBotUsage({});
-        localStorage.removeItem('bots');
-        localStorage.removeItem('personas');
-        localStorage.removeItem('chatHistories');
-        localStorage.removeItem('botUsage');
       }
   };
 
@@ -259,7 +292,7 @@ const App: React.FC = () => {
                     toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
                     onOpenSettings={() => setIsSettingsOpen(true)}
                 />;
-      case 'bots':
+      case 'humans':
         return <BotsPage bots={bots} onSelectBot={handleSelectBot} onEditBot={handleEditBot} onDeleteBot={handleDeleteBot} />;
       case 'create':
         return <CreationForm onSaveBot={handleSaveBot} onNavigate={handleNavigate} botToEdit={botToEdit} />;
@@ -277,6 +310,7 @@ const App: React.FC = () => {
                     chatHistory={chatHistories[effectiveBot.id] || []}
                     onNewMessage={(message) => handleNewMessage(effectiveBot.id, message)}
                     onUpdateHistory={(newHistory) => handleUpdateHistory(effectiveBot.id, newHistory)}
+                    onUpdateBot={handleSaveBot}
                     selectedAI={selectedAI}
                     voicePreference={voicePreference}
                     onEdit={handleEditBot}
@@ -289,6 +323,14 @@ const App: React.FC = () => {
         return null;
     }
   };
+
+  if (isLoading) {
+    return <div className="w-full h-full flex items-center justify-center bg-dark-bg text-white">Loading...</div>;
+  }
+
+  if (!currentUser) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
 
   return (
     <div className={`w-full h-full max-w-md mx-auto flex flex-col font-sans shadow-2xl overflow-hidden relative ${theme}`}>
@@ -304,6 +346,7 @@ const App: React.FC = () => {
         onSetVoicePreference={setVoicePreference}
         hasConsented={hasConsented}
         onConsentChange={handleConsentChange}
+        onLogout={handleLogout}
       />
       <div className="flex-1 overflow-hidden">
         {renderPage()}
