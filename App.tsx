@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import HomePage from './components/HomePage';
 import BotsPage from './components/BotsPage';
 import CreationForm from './components/CreationForm';
@@ -8,17 +8,10 @@ import ImageGeneratorPage from './components/ImageGeneratorPage';
 import ScenarioGeneratorPage from './components/ScenarioGeneratorPage';
 import FooterNav from './components/FooterNav';
 import SettingsPanel from './components/SettingsPanel';
-import ExitConfirmationModal from './components/ExitConfirmationModal'; // Import the new component
 import type { User, BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference } from './types';
 import { loadUserData, saveUserData, clearUserData } from './services/storageService';
 
 export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'story';
-
-interface AppState {
-  page: Page;
-  selectedBotId?: string;
-  botToEditId?: string;
-}
 
 // A default user object for the login-free experience
 const defaultUser: User = {
@@ -31,9 +24,11 @@ const defaultUser: User = {
 
 const App: React.FC = () => {
   // App State
-  const [appState, setAppState] = useState<AppState>({ page: 'home' });
+  const [currentPage, setCurrentPage] = useState<Page>('home');
   const [bots, setBots] = useState<BotProfile[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
+  const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
+  const [botToEdit, setBotToEdit] = useState<BotProfile | null>(null);
   const [chatHistories, setChatHistories] = useState<Record<string, ChatMessage[]>>({});
   const [botUsage, setBotUsage] = useState<Record<string, number>>({});
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
@@ -41,73 +36,6 @@ const App: React.FC = () => {
   const [selectedAI, setSelectedAI] = useState<AIModelOption>('gemini-2.5-flash');
   const [voicePreference, setVoicePreference] = useState<VoicePreference | null>(null);
   const [hasConsented, setHasConsented] = useState<boolean>(false);
-  const [showExitModal, setShowExitModal] = useState(false);
-
-  // --- Navigation Logic ---
-  const navigate = useCallback((newState: Partial<AppState>, replace = false) => {
-    const finalState = { ...appState, ...newState };
-    
-    // Construct a URL hash for the new state
-    let hash = `#/${finalState.page}`;
-    if (finalState.page === 'chat' && finalState.selectedBotId) {
-        hash += `/${finalState.selectedBotId}`;
-    } else if (finalState.page === 'create' && finalState.botToEditId) {
-        hash += `/${finalState.botToEditId}`;
-    }
-
-    // Use pushState to add to history, or replaceState for non-history changes
-    if (replace) {
-        window.history.replaceState(finalState, '', hash);
-    } else if (window.location.hash !== hash) {
-        window.history.pushState(finalState, '', hash);
-    }
-
-    setAppState(finalState);
-  }, [appState]);
-
-  // Effect to handle browser back/forward navigation
-  useEffect(() => {
-    const handlePopState = (event: PopStateEvent) => {
-      if (event.state) {
-        setAppState(event.state);
-      } else {
-        // This means we've gone back to before the app's first history entry.
-        // On mobile, this would close the app. We intercept it to show a confirmation.
-        setShowExitModal(true);
-        // CRITICAL: We push the current state back onto the history stack.
-        // This "cancels" the back navigation and prevents the app from closing
-        // until the user confirms in the modal.
-        window.history.pushState(appState, '', window.location.hash);
-      }
-    };
-    
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [appState]);
-
-  // Effect for initial app load and routing from URL
-  useEffect(() => {
-    const hash = window.location.hash;
-    const parts = hash.replace('#/', '').split('/');
-    const page = (parts[0] || 'home') as Page;
-    const param = parts[1];
-    
-    let initialState: AppState = { page: 'home' };
-    
-    if (page === 'chat' && param) {
-      initialState = { page: 'chat', selectedBotId: param };
-    } else if (page === 'create' && param) {
-      initialState = { page: 'create', botToEditId: param };
-    } else if (page) {
-      initialState = { page: page };
-    }
-    
-    setAppState(initialState);
-    // Use replaceState to set the initial history entry correctly.
-    window.history.replaceState(initialState, '');
-
-  }, []);
-
 
   // Load all data from storage on initial app load
   useEffect(() => {
@@ -139,6 +67,8 @@ const App: React.FC = () => {
       voicePreference,
       hasConsented,
     };
+    // The initial empty state should not overwrite saved data.
+    // This check prevents clearing storage on the very first render.
     if (bots.length > 0 || personas.length > 0 || Object.keys(botUsage).length > 0) {
        saveUserData(dataToSave);
     }
@@ -155,11 +85,10 @@ const App: React.FC = () => {
         setIsSettingsOpen(true);
         return;
     }
-    const newState: Partial<AppState> = { page };
     if (page === 'create') {
-        newState.botToEditId = undefined; // Clear any editing state
+        setBotToEdit(null);
     }
-    navigate(newState);
+    setCurrentPage(page);
   };
   
   const handleSelectBot = (id: string) => {
@@ -171,22 +100,28 @@ const App: React.FC = () => {
     
     if (!chatHistories[id] || chatHistories[id].length === 0) {
       const bot = bots.find(b => b.id === id);
-      if (bot && bot.scenario) {
+      if (bot) {
+        const openingMessage = bot.scenario || `Hello! I'm ${bot.name}. Let's chat.`;
         const initialMessage: ChatMessage = {
           id: `bot-initial-${Date.now()}`,
-          text: bot.scenario,
+          text: openingMessage,
           sender: 'bot',
           timestamp: Date.now(),
         };
         setChatHistories(prev => ({ ...prev, [id]: [initialMessage] }));
       }
     }
+    setSelectedBotId(id);
     setBotUsage(prev => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
-    navigate({ page: 'chat', selectedBotId: id });
+    setCurrentPage('chat');
   };
 
   const handleEditBot = (id: string) => {
-    navigate({ page: 'create', botToEditId: id });
+    const bot = bots.find(b => b.id === id);
+    if (bot) {
+        setBotToEdit(bot);
+        setCurrentPage('create');
+    }
   };
 
   const handleDeleteBot = (id: string) => {
@@ -210,7 +145,8 @@ const App: React.FC = () => {
                 name: `${botToClone.name} (Clone)`,
             };
             setBots(prev => [newBot, ...prev]);
-            navigate({ page: 'create', botToEditId: newBot.id });
+            setBotToEdit(newBot);
+            setCurrentPage('create');
         }
     }
   };
@@ -222,7 +158,7 @@ const App: React.FC = () => {
       const newBot = { ...botData, id: `bot-${Date.now()}` };
       setBots(prev => [...prev, newBot]);
     }
-    navigate({ page: 'humans' });
+    setBotToEdit(null);
   };
   
   const handleSavePersona = (personaData: Omit<Persona, 'id'> | Persona) => {
@@ -243,8 +179,15 @@ const App: React.FC = () => {
   
   const handleAssignPersona = (personaId: string, botIds: string[]) => {
       setBots(prevBots => prevBots.map(bot => {
-          if (botIds.includes(bot.id)) return { ...bot, personaId };
-          if (bot.personaId === personaId && !botIds.includes(bot.id)) return { ...bot, personaId: null };
+          // If this bot is in the list to be assigned, set its personaId.
+          if (botIds.includes(bot.id)) {
+              return { ...bot, personaId };
+          }
+          // If this bot PREVIOUSLY had this personaId but is now unselected, clear it.
+          if (bot.personaId === personaId && !botIds.includes(bot.id)) {
+              return { ...bot, personaId: null };
+          }
+          // Otherwise, leave the bot as is.
           return bot;
       }));
   };
@@ -278,6 +221,7 @@ const App: React.FC = () => {
   const handleClearData = async () => {
       if (window.confirm("Are you sure you want to delete all your Humans, personas, and chat history? This cannot be undone.")) {
         await clearUserData();
+        // Reset state locally as well
         setBots([]);
         setPersonas([]);
         setChatHistories({});
@@ -289,12 +233,13 @@ const App: React.FC = () => {
     setHasConsented(agreed);
   };
 
-  const selectedBot = bots.find(b => b.id === appState.selectedBotId);
-  const botToEdit = bots.find(b => b.id === appState.botToEditId);
+  const selectedBot = bots.find(b => b.id === selectedBotId);
   const personaForBot = personas.find(p => p.id === selectedBot?.personaId);
   
   const effectiveBot = selectedBot ? {
       ...selectedBot,
+      // If a persona is assigned, combine the bot's base personality with the persona's personality.
+      // Otherwise, just use the bot's base personality.
       personality: personaForBot
         ? `${selectedBot.personality}\n\n# PERSONA OVERLAY\n${personaForBot.personality}`
         : selectedBot.personality,
@@ -302,7 +247,7 @@ const App: React.FC = () => {
   } : null;
 
   const renderPage = () => {
-    switch(appState.page) {
+    switch(currentPage) {
       case 'home':
         return <HomePage 
                     bots={bots} 
@@ -318,7 +263,7 @@ const App: React.FC = () => {
       case 'humans':
         return <BotsPage bots={bots} onSelectBot={handleSelectBot} onEditBot={handleEditBot} onDeleteBot={handleDeleteBot} onCloneBot={handleCloneBot} />;
       case 'create':
-        return <CreationForm onSaveBot={handleSaveBot} onNavigate={page => navigate({ page })} botToEdit={botToEdit || null} />;
+        return <CreationForm onSaveBot={handleSaveBot} onNavigate={handleNavigate} botToEdit={botToEdit} />;
       case 'images':
         return <ImageGeneratorPage />;
       case 'story':
@@ -329,7 +274,7 @@ const App: React.FC = () => {
         if (effectiveBot) {
           return <ChatView 
                     bot={effectiveBot} 
-                    onBack={() => window.history.back()}
+                    onBack={() => setCurrentPage('home')}
                     chatHistory={chatHistories[effectiveBot.id] || []}
                     onNewMessage={(message) => handleNewMessage(effectiveBot.id, message)}
                     onUpdateHistory={(newHistory) => handleUpdateHistory(effectiveBot.id, newHistory)}
@@ -341,7 +286,7 @@ const App: React.FC = () => {
                     currentUser={defaultUser}
                  />;
         }
-        navigate({ page: 'home' });
+        setCurrentPage('home');
         return null;
       default:
         return null;
@@ -363,17 +308,12 @@ const App: React.FC = () => {
         hasConsented={hasConsented}
         onConsentChange={handleConsentChange}
       />
-      <ExitConfirmationModal
-        isOpen={showExitModal}
-        onConfirm={() => window.close()}
-        onCancel={() => setShowExitModal(false)}
-      />
       <div className="flex-1 overflow-hidden">
         {renderPage()}
       </div>
-      {appState.page !== 'chat' && (
+      {currentPage !== 'chat' && (
         <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md">
-            <FooterNav currentPage={appState.page} onNavigate={handleNavigate} />
+            <FooterNav currentPage={currentPage} onNavigate={handleNavigate} />
         </div>
       )}
     </div>
