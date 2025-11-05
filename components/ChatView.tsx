@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { BotProfile, ChatMessage, Persona, AIModelOption, VoicePreference } from '../types';
+import type { User, BotProfile, ChatMessage, Persona, AIModelOption, VoicePreference } from '../types';
 import { generateBotResponse, generateUserResponseSuggestion } from '../services/geminiService';
 
 const PhotoViewer: React.FC<{ src: string; onClose: () => void }> = ({ src, onClose }) => (
@@ -64,9 +64,10 @@ interface ChatViewProps {
   voicePreference: VoicePreference | null;
   onEdit: (id: string) => void;
   onStartNewChat: (id: string) => void;
+  currentUser: User | null;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMessage, onUpdateHistory, onUpdateBot, selectedAI, voicePreference, onEdit, onStartNewChat }) => {
+const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMessage, onUpdateHistory, onUpdateBot, selectedAI, voicePreference, onEdit, onStartNewChat, currentUser }) => {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -77,6 +78,10 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
   const [tempBrightness, setTempBrightness] = useState(bot.chatBackgroundBrightness ?? 100);
   const menuRef = useRef<HTMLDivElement>(null);
   
+  const botAvatar = bot.photo; // Bot avatar is always the bot's own photo.
+  const userAvatar = bot.persona?.photo || currentUser?.photoUrl; // User avatar uses persona photo if available, otherwise the default user photo.
+  const userAvatarAlt = bot.persona?.name || currentUser?.name || 'User';
+
   useEffect(() => {
     // This logic has been moved to App.tsx's handleStartNewChat and initial load to be more reliable.
     // The useEffect below handles scrolling to the bottom when history changes.
@@ -203,11 +208,14 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
       console.warn('parseMessage received non-string input:', text);
       return '';
     }
+    // This regex splits the text by actions wrapped in single asterisks, keeping the delimiters.
     const parts = text.split(/(\*.*?\*)/g);
     return parts.map((part, index) => {
+      // If a part is an action (e.g., "*smiles*"), render it as blue, italic text without the asterisks.
       if (part.startsWith('*') && part.endsWith('*')) {
-        return <em key={index} className="text-accent italic">{part.slice(1, -1)}</em>;
+        return <span key={index} className="text-accent italic">{part.slice(1, -1)}</span>;
       }
+      // Otherwise, render the part as plain text (dialogue, spaces, etc.).
       return part;
     });
   };
@@ -260,7 +268,7 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
         <button onClick={onBack} className="p-2 rounded-full hover:bg-white/10 dark:hover:bg-black/20">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
         </button>
-        <img src={bot.photo} alt={bot.name} className="h-10 w-10 rounded-lg object-cover ml-4 cursor-pointer" onClick={() => setPhotoToView(bot.photo)} />
+        <img src={botAvatar} alt={bot.name} className="h-10 w-10 rounded-lg object-cover ml-4 cursor-pointer" onClick={() => setPhotoToView(botAvatar)} />
         <div className="ml-3 flex-1">
           <h2 className="font-bold">{bot.name}</h2>
         </div>
@@ -282,7 +290,7 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
       <main className="flex-1 overflow-y-auto p-4 space-y-1 z-10">
         {chatHistory.map((msg) => (
           <div key={msg.id} className={`flex items-end gap-2 group ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {msg.sender === 'bot' && <img src={bot.photo} alt={bot.name} className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => setPhotoToView(bot.photo)} />}
+            {msg.sender === 'bot' && <img src={botAvatar} alt={bot.name} className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => setPhotoToView(botAvatar)} />}
             
             <div className={`flex items-center gap-2 ${msg.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                 <div className={`max-w-xs md:max-w-md lg:max-w-lg p-3 rounded-2xl ${msg.sender === 'user' ? 'bg-accent text-white rounded-br-none' : 'bg-white/10 dark:bg-black/20 rounded-bl-none'}`}>
@@ -301,12 +309,12 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
                     </div>
                 )}
             </div>
-             {msg.sender === 'bot' && bot.persona?.photo && <img src={bot.persona.photo} alt={bot.persona.name} className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => bot.persona?.photo && setPhotoToView(bot.persona.photo)} />}
+            {msg.sender === 'user' && userAvatar && <img src={userAvatar} alt={userAvatarAlt} className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => setPhotoToView(userAvatar)} />}
           </div>
         ))}
         {isTyping && (
             <div className="flex items-end gap-2 justify-start">
-                <img src={bot.photo} alt={bot.name} className="h-10 w-10 rounded-lg object-cover" />
+                <img src={botAvatar} alt={bot.name} className="h-10 w-10 rounded-lg object-cover" />
                 <div className="p-3 rounded-2xl bg-white/10 dark:bg-black/20 rounded-bl-none">
                     <div className="flex items-center space-x-1">
                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse [animation-delay:-0.3s]"></div>

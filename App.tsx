@@ -10,6 +10,8 @@ import FooterNav from './components/FooterNav';
 import SettingsPanel from './components/SettingsPanel';
 import LoginPage from './components/LoginPage';
 import type { User, BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference } from './types';
+import { onAuthStateChanged, signOut } from './services/authService';
+import { loadUserData, saveUserData, clearUserData } from './services/storageService';
 
 export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'scenario';
 
@@ -17,6 +19,7 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // App State
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [bots, setBots] = useState<BotProfile[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
@@ -30,104 +33,76 @@ const App: React.FC = () => {
   const [voicePreference, setVoicePreference] = useState<VoicePreference | null>(null);
   const [hasConsented, setHasConsented] = useState<boolean>(false);
 
-  // Check for a logged-in user on initial load
+  // Listen for authentication changes
   useEffect(() => {
-    try {
-      const savedUser = localStorage.getItem('currentUser');
-      if (savedUser) {
-        const user = JSON.parse(savedUser);
-        setCurrentUser(user);
-        loadUserData(user.id);
+    const unsubscribe = onAuthStateChanged(async user => {
+      setCurrentUser(user);
+      if (user) {
+        // User is signed in, load their data
+        const data = await loadUserData(user.id);
+        if (data) {
+          setBots(data.bots || []);
+          setPersonas(data.personas || []);
+          setChatHistories(data.chatHistories || {});
+          setBotUsage(data.botUsage || {});
+          setTheme(data.theme || 'dark');
+          setSelectedAI(data.selectedAI || 'gemini-2.5-flash');
+          setVoicePreference(data.voicePreference || null);
+          setHasConsented(data.hasConsented || false);
+        } else {
+          // New user, reset to defaults
+          setBots([]);
+          setPersonas([]);
+          setChatHistories({});
+          setBotUsage({});
+          setTheme('dark');
+          setSelectedAI('gemini-2.5-flash');
+          setVoicePreference(null);
+          setHasConsented(false);
+        }
       }
-    } catch (error) {
-      console.error("Failed to load user session", error);
-    } finally {
       setIsLoading(false);
-    }
+    });
+
+    // Cleanup subscription on unmount
+    return () => unsubscribe();
   }, []);
 
-  const loadUserData = (userId: string) => {
-    try {
-      const get = (key: string) => localStorage.getItem(`${key}_${userId}`);
-      
-      const savedBots = get('bots');
-      if (savedBots) setBots(JSON.parse(savedBots));
-
-      const savedPersonas = get('personas');
-      if (savedPersonas) setPersonas(JSON.parse(savedPersonas));
-
-      const savedHistories = get('chatHistories');
-      if (savedHistories) setChatHistories(JSON.parse(savedHistories));
-
-      const savedUsage = get('botUsage');
-      if (savedUsage) setBotUsage(JSON.parse(savedUsage));
-
-      const savedTheme = get('theme');
-      const themeValue = savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : 'dark';
-      setTheme(themeValue);
-      document.documentElement.classList.toggle('dark', themeValue === 'dark');
-
-      const savedAI = get('selectedAI');
-      const availableModels: AIModelOption[] = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-flash-lite-latest'];
-      if (savedAI && availableModels.includes(savedAI as AIModelOption)) {
-        setSelectedAI(savedAI as AIModelOption);
-      }
-
-      const savedVoice = get('voicePreference');
-      if (savedVoice) setVoicePreference(savedVoice as VoicePreference);
-
-      const savedConsent = get('hasConsented');
-      if (savedConsent) setHasConsented(JSON.parse(savedConsent));
-
-    } catch (error) {
-      console.error(`Failed to load data for user ${userId}`, error);
-    }
-  };
-
-  // Save data to localStorage whenever it changes, scoped to the current user
+  // Save data to storage whenever it changes for the logged-in user
   useEffect(() => {
-    if (!currentUser) return;
-    try {
-      const set = (key: string, value: any) => localStorage.setItem(`${key}_${currentUser.id}`, JSON.stringify(value));
+    if (!currentUser || isLoading) return;
 
-      set('bots', bots);
-      set('personas', personas);
-      set('chatHistories', chatHistories);
-      set('botUsage', botUsage);
-      localStorage.setItem(`theme_${currentUser.id}`, theme);
-      localStorage.setItem(`selectedAI_${currentUser.id}`, selectedAI);
-      if (voicePreference) {
-        localStorage.setItem(`voicePreference_${currentUser.id}`, voicePreference);
-      } else {
-        localStorage.removeItem(`voicePreference_${currentUser.id}`);
-      }
-      set('hasConsented', hasConsented);
+    const saveData = async () => {
+        const dataToSave = {
+          bots,
+          personas,
+          chatHistories,
+          botUsage,
+          theme,
+          selectedAI,
+          voicePreference,
+          hasConsented,
+        };
+        await saveUserData(currentUser.id, dataToSave);
+    };
+    saveData();
+  }, [bots, personas, chatHistories, botUsage, theme, selectedAI, voicePreference, hasConsented, currentUser, isLoading]);
 
+  // Update document theme
+  useEffect(() => {
       document.documentElement.classList.toggle('dark', theme === 'dark');
-    } catch (error) {
-      console.error("Failed to save data to localStorage", error);
-    }
-  }, [bots, personas, chatHistories, botUsage, theme, selectedAI, voicePreference, hasConsented, currentUser]);
+  }, [theme]);
 
   const handleLogin = (user: User) => {
-    setCurrentUser(user);
-    localStorage.setItem('currentUser', JSON.stringify(user));
-    loadUserData(user.id); // Load or initialize data for the new user
+    // Auth state listener will handle setting the user and loading data
+    // This function can be used for any post-login actions if needed
+    console.log("Login successful for:", user.name);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (window.confirm("Are you sure you want to log out?")) {
-        // Clear user-specific data from local storage for privacy
-        if (currentUser) {
-            Object.keys(localStorage).forEach(key => {
-                if (key.endsWith(`_${currentUser.id}`)) {
-                    localStorage.removeItem(key);
-                }
-            });
-        }
-        localStorage.removeItem('currentUser');
-        setCurrentUser(null);
-        // Reset state
+        await signOut();
+        // Reset state, the auth listener will handle setting currentUser to null
         setBots([]);
         setPersonas([]);
         setChatHistories({});
@@ -136,7 +111,7 @@ const App: React.FC = () => {
         setIsSettingsOpen(false);
     }
   };
-
+  
   const handleNavigate = (page: Page) => {
     if ((page === 'create' || page === 'humans') && !hasConsented) {
         alert("Please agree to the disclaimer in the settings to continue.");
@@ -220,13 +195,16 @@ const App: React.FC = () => {
   };
   
   const handleAssignPersona = (personaId: string, botIds: string[]) => {
-      const persona = personas.find(p => p.id === personaId);
-      if (!persona) return;
-      
       setBots(prevBots => prevBots.map(bot => {
+          // If this bot is in the list to be assigned, set its personaId.
           if (botIds.includes(bot.id)) {
-              return { ...bot, personaId: persona.id, personality: persona.personality };
+              return { ...bot, personaId };
           }
+          // If this bot PREVIOUSLY had this personaId but is now unselected, clear it.
+          if (bot.personaId === personaId && !botIds.includes(bot.id)) {
+              return { ...bot, personaId: null };
+          }
+          // Otherwise, leave the bot as is.
           return bot;
       }));
   };
@@ -257,8 +235,10 @@ const App: React.FC = () => {
     }
   };
 
-  const handleClearData = () => {
-      if (window.confirm("Are you sure you want to delete all your Humans, personas, and chat history? This cannot be undone.")) {
+  const handleClearData = async () => {
+      if (currentUser && window.confirm("Are you sure you want to delete all your Humans, personas, and chat history? This cannot be undone.")) {
+        await clearUserData(currentUser.id);
+        // Reset state locally as well
         setBots([]);
         setPersonas([]);
         setChatHistories({});
@@ -275,7 +255,11 @@ const App: React.FC = () => {
   
   const effectiveBot = selectedBot ? {
       ...selectedBot,
-      personality: personaForBot?.personality || selectedBot.personality,
+      // If a persona is assigned, combine the bot's base personality with the persona's personality.
+      // Otherwise, just use the bot's base personality.
+      personality: personaForBot
+        ? `${selectedBot.personality}\n\n# PERSONA OVERLAY\n${personaForBot.personality}`
+        : selectedBot.personality,
       persona: personaForBot
   } : null;
 
@@ -315,6 +299,7 @@ const App: React.FC = () => {
                     voicePreference={voicePreference}
                     onEdit={handleEditBot}
                     onStartNewChat={handleStartNewChat}
+                    currentUser={currentUser}
                  />;
         }
         setCurrentPage('home');

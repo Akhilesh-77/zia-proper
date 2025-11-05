@@ -1,6 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { generateImage } from '../services/geminiService';
 
+// A simple hook to get the current user ID from session storage
+// In a larger app, this would come from a global context (like React Context)
+const useCurrentUserId = (): string | null => {
+    const [userId, setUserId] = useState<string | null>(null);
+    useEffect(() => {
+        try {
+            const savedUser = sessionStorage.getItem('mock_google_user_session');
+            if(savedUser) {
+                setUserId(JSON.parse(savedUser).id);
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }, []);
+    return userId;
+}
+
 const ImageGeneratorPage: React.FC = () => {
     const [sourceImage, setSourceImage] = useState<string | null>(null);
     const [prompt, setPrompt] = useState<string>('');
@@ -8,17 +25,21 @@ const ImageGeneratorPage: React.FC = () => {
     const [savedImages, setSavedImages] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const userId = useCurrentUserId();
+
+    const getStorageKey = () => `savedImages_${userId}`;
 
     useEffect(() => {
+        if (!userId) return;
         try {
-            const storedImages = localStorage.getItem('savedImages');
+            const storedImages = localStorage.getItem(getStorageKey());
             if (storedImages) {
                 setSavedImages(JSON.parse(storedImages));
             }
         } catch (e) {
             console.error("Failed to load saved images from localStorage", e);
         }
-    }, []);
+    }, [userId]);
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -53,16 +74,18 @@ const ImageGeneratorPage: React.FC = () => {
     };
 
     const handleSaveImage = (imageData: string) => {
+        if (!userId) return;
         const updatedSavedImages = [imageData, ...savedImages];
         setSavedImages(updatedSavedImages);
-        localStorage.setItem('savedImages', JSON.stringify(updatedSavedImages));
+        localStorage.setItem(getStorageKey(), JSON.stringify(updatedSavedImages));
         setGeneratedImage(null); // Clear the generated image after saving
     };
 
     const handleDeleteSavedImage = (index: number) => {
+        if (!userId) return;
         const updatedSavedImages = savedImages.filter((_, i) => i !== index);
         setSavedImages(updatedSavedImages);
-        localStorage.setItem('savedImages', JSON.stringify(updatedSavedImages));
+        localStorage.setItem(getStorageKey(), JSON.stringify(updatedSavedImages));
     };
 
     const inputClass = "w-full bg-white/10 dark:bg-black/10 p-3 rounded-2xl border border-white/20 dark:border-black/20 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-300 shadow-inner";

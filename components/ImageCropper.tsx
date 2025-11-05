@@ -132,7 +132,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
         const { clientWidth: imgWidth, clientHeight: imgHeight } = imgRef.current;
         const dx = clientX - dragState.startX;
         const dy = clientY - dragState.startY;
-        let { x, y, width, height } = { ...dragState.startCrop };
+        let { x, y, width, height } = dragState.startCrop;
         const minDimension = 20;
 
         if (dragState.type === 'move') {

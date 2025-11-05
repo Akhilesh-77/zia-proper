@@ -15,7 +15,7 @@ const fileToGenerativePart = (base64Data: string, mimeType: string): Part => {
   };
 };
 
-const RETRY_LIMIT = 3;
+const RETRY_LIMIT = 2;
 
 async function retry<T>(fn: () => Promise<T>): Promise<T> {
     let lastError: unknown = new Error("All retry attempts failed without a specific error.");

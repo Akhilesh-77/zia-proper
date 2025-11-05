@@ -1,4 +1,4 @@
-import type { BotProfile } from './types';
+// FIX: Removed self-import of 'BotProfile' which was causing a conflict with its local declaration.
 
 export type AIModelOption = 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-flash-latest' | 'gemini-flash-lite-latest';
 export type VoicePreference = string;

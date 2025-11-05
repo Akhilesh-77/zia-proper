@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { BotProfile } from '../types';
 import ImageCropper from './ImageCropper';
+import FullScreenEditor from './FullScreenEditor';
 
 interface CreationPageProps {
   onSaveBot: (profile: Omit<BotProfile, 'id'> | BotProfile) => void;
@@ -18,6 +19,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
   const [chatBackground, setChatBackground] = useState<string | null>(null);
   const [imageToCrop, setImageToCrop] = useState<{ src: string, type: 'photo' | 'background' } | null>(null);
   const [isSpicy, setIsSpicy] = useState(false);
+  const [editingField, setEditingField] = useState<'scenario' | 'personality' | null>(null);
 
   const isEditing = !!botToEdit;
 
@@ -78,7 +80,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
   };
 
   const inputClass = "w-full bg-white/10 dark:bg-black/10 p-3 rounded-2xl border border-white/20 dark:border-black/20 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-300 shadow-inner";
-  const labelClass = "block text-sm font-medium mb-2";
+  const labelClass = "block text-sm font-medium";
 
   return (
     <div className="h-full w-full flex flex-col p-4 bg-light-bg text-light-text dark:bg-dark-bg dark:text-dark-text">
@@ -97,6 +99,22 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
                 }}
             />
         )}
+        {editingField === 'scenario' && (
+            <FullScreenEditor
+                label="Scenario (Opening Message)"
+                initialValue={scenario}
+                onSave={(newValue) => setScenario(newValue)}
+                onClose={() => setEditingField(null)}
+            />
+        )}
+        {editingField === 'personality' && (
+            <FullScreenEditor
+                label="Human Personality Prompt"
+                initialValue={personality}
+                onSave={(newValue) => setPersonality(newValue)}
+                onClose={() => setEditingField(null)}
+            />
+        )}
       <header className="flex items-center mb-6 text-center">
         <h1 className="text-xl font-bold flex-1">{isEditing ? 'Edit Human' : 'Create New Human'}</h1>
       </header>
@@ -104,7 +122,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
       <form onSubmit={handleSubmit} className="space-y-6 flex-1 overflow-y-auto pb-24">
         <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="photo-upload" className={labelClass}>Human Photo *</label>
+              <label htmlFor="photo-upload" className={`${labelClass} mb-2`}>Human Photo *</label>
               <input id="photo-upload" type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'photo')} className="hidden" />
               <label htmlFor="photo-upload" className="cursor-pointer block w-full h-32 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center">
                 {photo ? (
@@ -115,7 +133,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
               </label>
             </div>
             <div>
-              <label htmlFor="gif-upload" className={labelClass}>Human GIF</label>
+              <label htmlFor="gif-upload" className={`${labelClass} mb-2`}>Human GIF</label>
               <input id="gif-upload" type="file" accept="image/gif" onChange={(e) => handleFileUpload(e, 'gif')} className="hidden" />
               <label htmlFor="gif-upload" className="cursor-pointer block w-full h-32 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center">
                 {gif ? (
@@ -127,7 +145,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
             </div>
         </div>
         <div>
-           <label htmlFor="background-upload" className={labelClass}>Chat Background (9:16)</label>
+           <label htmlFor="background-upload" className={`${labelClass} mb-2`}>Chat Background (9:16)</label>
             <input id="background-upload" type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'background')} className="hidden" />
             <label htmlFor="background-upload" className="cursor-pointer block w-full h-48 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center">
                 {chatBackground ? (
@@ -138,19 +156,33 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
             </label>
         </div>
         <div>
-          <label htmlFor="name" className={labelClass}>Human Name *</label>
+          <label htmlFor="name" className={`${labelClass} mb-2`}>Human Name *</label>
           <input id="name" type="text" value={name} onChange={e => setName(e.target.value)} className={inputClass} required />
         </div>
         <div>
-          <label htmlFor="description" className={labelClass}>Short Description *</label>
+          <label htmlFor="description" className={`${labelClass} mb-2`}>Short Description *</label>
           <textarea id="description" value={description} onChange={e => setDescription(e.target.value)} className={inputClass} rows={2} required />
         </div>
          <div>
-          <label htmlFor="scenario" className={labelClass}>Scenario (Opening Message)</label>
+            <div className="flex justify-between items-center mb-2">
+                <label htmlFor="scenario" className={labelClass}>Scenario (Opening Message)</label>
+                <button type="button" onClick={() => setEditingField('scenario')} className="p-1 rounded-full hover:bg-white/10 dark:hover:bg-black/20" aria-label="Expand Scenario Editor">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 0h-4m4 0l-5-5" />
+                    </svg>
+                </button>
+            </div>
           <textarea id="scenario" value={scenario} onChange={e => setScenario(e.target.value)} className={inputClass} rows={3} placeholder="The Human's first message to the user..." />
         </div>
         <div>
-          <label htmlFor="personality" className={labelClass}>Human Personality Prompt *</label>
+            <div className="flex justify-between items-center mb-2">
+                <label htmlFor="personality" className={labelClass}>Human Personality Prompt *</label>
+                <button type="button" onClick={() => setEditingField('personality')} className="p-1 rounded-full hover:bg-white/10 dark:hover:bg-black/20" aria-label="Expand Personality Editor">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 0h-4m4 0l-5-5" />
+                    </svg>
+                </button>
+            </div>
           <textarea id="personality" value={personality} onChange={e => setPersonality(e.target.value)} className={inputClass} rows={8} required placeholder="Describe the Human's character, traits, and how it should speak..." />
           <p className="text-xs text-gray-500 mt-1">You can create reusable personalities on the 'Personas' page and assign them to Humans.</p>
         </div>
