@@ -86,11 +86,6 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
   const userAvatarAlt = bot.persona?.name || currentUser.name || 'User';
 
   useEffect(() => {
-    // This logic has been moved to App.tsx's handleStartNewChat and initial load to be more reliable.
-    // The useEffect below handles scrolling to the bottom when history changes.
-  }, []);
-
-  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory]);
   
