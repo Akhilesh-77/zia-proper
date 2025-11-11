@@ -20,6 +20,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
   const [imageToCrop, setImageToCrop] = useState<{ src: string, type: 'photo' | 'background' } | null>(null);
   const [isSpicy, setIsSpicy] = useState(false);
   const [editingField, setEditingField] = useState<'scenario' | 'personality' | null>(null);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const isEditing = !!botToEdit;
 
@@ -79,6 +80,23 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
     onNavigate('humans');
   };
 
+  const handleCopyConfiguration = () => {
+    const configText = `Human Name: ${name}
+Short Description: ${description}
+Scenario (Opening Message): ${scenario}
+
+Human Personality Prompt:
+${personality}`;
+
+    navigator.clipboard.writeText(configText).then(() => {
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
+    }).catch(err => {
+        console.error('Failed to copy configuration:', err);
+        alert('Failed to copy configuration.');
+    });
+  };
+
   const inputClass = "w-full bg-white/10 dark:bg-black/10 p-3 rounded-2xl border border-white/20 dark:border-black/20 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-300 shadow-inner";
   const labelClass = "block text-sm font-medium";
 
@@ -116,8 +134,24 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
                 onClose={() => setEditingField(null)}
             />
         )}
-      <header className="flex items-center mb-6 text-center">
-        <h1 className="text-xl font-bold flex-1">{isEditing ? 'Edit Human' : 'Create New Human'}</h1>
+      <header className="flex items-center justify-center mb-6 relative">
+        <h1 className="text-xl font-bold">{isEditing ? 'Edit Human' : 'Create New Human'}</h1>
+        <button 
+            type="button"
+            onClick={handleCopyConfiguration}
+            className="absolute right-0 top-1/2 -translate-y-1/2 p-2 rounded-full hover:bg-white/10 dark:hover:bg-black/20 w-10 h-10 flex items-center justify-center transition-colors"
+            aria-label="Copy configuration"
+        >
+            {copySuccess ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+            ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+            )}
+        </button>
       </header>
       
       <form onSubmit={handleSubmit} className="space-y-6 flex-1 overflow-y-auto pb-24">
