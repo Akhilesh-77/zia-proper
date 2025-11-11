@@ -8,7 +8,7 @@ interface ImageCropperProps {
     outputShape?: 'rectangle' | 'circle';
 }
 
-const getCroppedImg = (image: HTMLImageElement, crop: {x: number, y: number, width: number, height: number}, outputShape: 'rectangle' | 'circle') => {
+const getCroppedImg = (image: HTMLImageElement, crop: {x: number, y: number, width: number, height: number}, outputShape: 'rectangle' | 'circle', brightness: number) => {
     const canvas = document.createElement('canvas');
     let outputWidth: number, outputHeight: number;
     
@@ -37,6 +37,8 @@ const getCroppedImg = (image: HTMLImageElement, crop: {x: number, y: number, wid
         ctx.closePath();
         ctx.clip();
     }
+    
+    ctx.filter = `brightness(${brightness})`;
 
     const scaleX = image.naturalWidth / image.width;
     const scaleY = image.naturalHeight / image.height;
@@ -63,7 +65,8 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
 
     const [crop, setCrop] = useState({ x: 0, y: 0, width: 100, height: 100 });
     const [dragState, setDragState] = useState<{ type: 'move' | 'resize'; handle: string; startX: number; startY: number; startCrop: typeof crop } | null>(null);
-
+    const [brightness, setBrightness] = useState(1);
+    
     const onImageLoad = useCallback(() => {
         if (!imgRef.current) return;
         const { clientWidth: imgWidth, clientHeight: imgHeight } = imgRef.current;
@@ -208,11 +211,12 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
 
     const handleCropConfirm = () => {
         if (imgRef.current && crop.width > 0) {
-            const croppedImageUrl = getCroppedImg(imgRef.current, crop, outputShape);
+            // FIX: Cast outputShape to the expected literal type to resolve TS error.
+            const croppedImageUrl = getCroppedImg(imgRef.current, crop, outputShape as 'rectangle' | 'circle', brightness);
             onCropComplete(croppedImageUrl);
         }
     };
-    
+
     const handles = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
     const cropTitle = aspect ? `Crop Image (${aspect === 1 ? '1:1' : '9:16'})` : 'Free-Form Crop';
 
@@ -232,6 +236,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
                         src={imageSrc}
                         alt="Image to crop"
                         className="w-full h-auto object-contain select-none pointer-events-none"
+                        style={{ filter: `brightness(${brightness})` }}
                     />
                     <div
                         className="absolute border-2 border-dashed border-white/80 cursor-move"
@@ -261,7 +266,19 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
                         ))}
                     </div>
                 </div>
-                <p className="text-xs text-gray-400 mt-2 text-center">Drag and resize the box to select your crop.</p>
+                 <div className="w-full max-w-xs mt-4">
+                    <label htmlFor="brightness-slider" className="text-sm text-gray-300 mb-2 block text-center">Brightness</label>
+                    <input
+                        id="brightness-slider"
+                        type="range"
+                        min="0.5"
+                        max="1.5"
+                        step="0.01"
+                        value={brightness}
+                        onChange={(e) => setBrightness(parseFloat(e.target.value))}
+                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-accent"
+                    />
+                </div>
                 <div className="flex gap-2 mt-6 w-full">
                     <button type="button" onClick={onClose} className="flex-1 bg-gray-500 text-white font-bold py-3 px-4 rounded-2xl transition-colors">Cancel</button>
                     <button type="button" onClick={handleCropConfirm} className="flex-1 bg-accent text-white font-bold py-3 px-4 rounded-2xl transition-colors">Save Crop</button>

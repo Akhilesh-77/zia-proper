@@ -11,7 +11,7 @@ export interface User {
 }
 
 export interface BotProfile {
-  id: string;
+  id:string;
   name: string;
   description: string;
   personality: string;
@@ -37,4 +37,10 @@ export interface Persona {
   description?: string;
   personality: string;
   photo?: string | null; // base64 data URL
+}
+
+export interface ChatSession {
+  startTime: number;
+  endTime: number;
+  botId: string;
 }

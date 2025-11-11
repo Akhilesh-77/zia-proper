@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import type { AIModelOption, VoicePreference } from '../types';
+import type { AIModelOption, VoicePreference, BotProfile, Persona, ChatMessage } from '../types';
+import type { Page } from '../App';
+
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -13,6 +15,7 @@ interface SettingsPanelProps {
   onSetVoicePreference: (voice: VoicePreference | null) => void;
   hasConsented: boolean;
   onConsentChange: (agreed: boolean) => void;
+  onNavigate: (page: Page) => void;
 }
 
 // FIX: Corrected the display names for Gemini models from 1.5 to 2.5 to match the actual models.
@@ -23,7 +26,7 @@ const aiModelOptions: { id: AIModelOption, name: string }[] = [
     { id: 'gemini-flash-lite-latest', name: 'Gemini Flash Lite' },
 ];
 
-const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, toggleTheme, onClearData, selectedAI, onSelectAI, voicePreference, onSetVoicePreference, hasConsented, onConsentChange }) => {
+const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, toggleTheme, onClearData, selectedAI, onSelectAI, voicePreference, onSetVoicePreference, hasConsented, onConsentChange, onNavigate }) => {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isDisclaimerExpanded, setIsDisclaimerExpanded] = useState(false);
 
@@ -42,6 +45,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, t
         window.speechSynthesis.onvoiceschanged = null;
     };
   }, []);
+
+  const handleNavigateStats = () => {
+    onNavigate('stats');
+    onClose();
+  }
 
   return (
     <>
@@ -107,6 +115,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, t
                             </label>
                         ))}
                     </div>
+                </div>
+
+                <div className="bg-white/5 dark:bg-black/10 p-4 rounded-xl space-y-3">
+                    <p className="font-medium">App Tools</p>
+                    <button 
+                        onClick={handleNavigateStats}
+                        className="w-full bg-accent/80 text-white font-bold py-2 px-4 rounded-lg transition-colors hover:bg-accent"
+                    >
+                        Usage Stats
+                    </button>
                 </div>
 
                 <div className="bg-white/5 dark:bg-black/10 p-4 rounded-xl space-y-3">

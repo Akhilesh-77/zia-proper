@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import type { User, BotProfile, ChatMessage, Persona, AIModelOption, VoicePreference } from '../types';
 import { generateBotResponse, generateUserResponseSuggestion } from '../services/geminiService';
@@ -66,12 +67,14 @@ interface ChatViewProps {
   onEdit: (id: string) => void;
   onStartNewChat: (id: string) => void;
   currentUser: User;
+  logSession: (startTime: number, botId: string) => void;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMessage, onUpdateHistory, onUpdateBot, selectedAI, voicePreference, onEdit, onStartNewChat, currentUser }) => {
+const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMessage, onUpdateHistory, onUpdateBot, selectedAI, voicePreference, onEdit, onStartNewChat, currentUser, logSession }) => {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesStartRef = useRef<HTMLDivElement>(null);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [photoToView, setPhotoToView] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -86,9 +89,12 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
   const userAvatarAlt = bot.persona?.name || currentUser.name || 'User';
 
   useEffect(() => {
-    // This logic has been moved to App.tsx's handleStartNewChat and initial load to be more reliable.
-    // The useEffect below handles scrolling to the bottom when history changes.
-  }, []);
+    // Log session start time on mount and log end time on unmount
+    const startTime = Date.now();
+    return () => {
+      logSession(startTime, bot.id);
+    };
+  }, [bot.id, logSession]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -259,6 +265,10 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
     onUpdateBot({ ...bot, chatBackgroundBrightness: newBrightness });
   };
 
+  const handleScrollToTop = () => {
+    messagesStartRef.current?.scrollIntoView({ behavior: 'auto' });
+  };
+
   return (
     <div className="h-full w-full flex flex-col bg-light-bg text-light-text dark:bg-dark-bg dark:text-dark-text relative">
         {photoToView && <PhotoViewer src={photoToView} onClose={() => setPhotoToView(null)} />}
@@ -305,7 +315,18 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
         </div>
       </header>
       
+      <button
+        onClick={handleScrollToTop}
+        className="absolute top-20 right-4 z-20 bg-black/40 text-white rounded-full h-10 w-10 flex items-center justify-center shadow-lg backdrop-blur-sm hover:bg-black/60 transition-colors"
+        aria-label="Scroll to top"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7 7 7M5 19l7-7 7 7" />
+        </svg>
+      </button>
+
       <main className="flex-1 overflow-y-auto p-4 space-y-1 z-10">
+        <div ref={messagesStartRef} />
         {chatHistory.map((msg) => (
           <div key={msg.id} className={`flex items-end gap-2 group ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
             {msg.sender === 'bot' && <img src={botAvatar} alt={bot.name} className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => setPhotoToView(botAvatar)} />}
@@ -328,46 +349,55 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
                 )}
                 {msg.sender === 'bot' && (
                     <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => handlePlayVoice(msg.text)} className="p-1 rounded-full bg-black/30 hover:bg-accent"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg></button>
-                        <button onClick={() => handleRegenerateMessage(msg.id)} className="p-1 rounded-full bg-black/30 hover:bg-accent"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h5M20 20v-5h-5M4 4l1.5 1.5A9 9 0 0120.5 15M20 20l-1.5-1.5A9 9 0 013.5 9" /></svg></button>
-                        <button onClick={() => handleDeleteMessage(msg.id)} className="p-1 rounded-full bg-black/30 hover:bg-red-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                        <button onClick={() => handlePlayVoice(msg.text)} className="p-1 rounded-full bg-black/30 hover:bg-accent"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.108 12 5v14c0 .892-1.077 1.337-1.707.707L5.586 15z" /></svg></button>
+                        <button onClick={() => handleRegenerateMessage(msg.id)} className="p-1 rounded-full bg-black/30 hover:bg-accent"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg></button>
                     </div>
                 )}
             </div>
-            {msg.sender === 'user' && userAvatar && <img src={userAvatar} alt={userAvatarAlt} className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => setPhotoToView(userAvatar)} />}
+
+            {msg.sender === 'user' && <img src={userAvatar} alt={userAvatarAlt} className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => setPhotoToView(userAvatar)} />}
           </div>
         ))}
+
         {isTyping && (
-            <div className="flex items-end gap-2 justify-start">
-                <img src={botAvatar} alt={bot.name} className="h-10 w-10 rounded-lg object-cover" />
-                <div className="p-3 rounded-2xl bg-white/10 dark:bg-black/20 rounded-bl-none">
-                    <div className="flex items-center space-x-1">
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse [animation-delay:-0.3s]"></div>
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse [animation-delay:-0.15s]"></div>
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
-                    </div>
+          <div className="flex items-end gap-2 justify-start">
+            <img src={botAvatar} alt={bot.name} className="h-10 w-10 rounded-lg object-cover" />
+            <div className="max-w-xs p-3 rounded-2xl bg-white/10 dark:bg-black/20 rounded-bl-none">
+                <div className="flex items-center justify-center space-x-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
                 </div>
             </div>
+          </div>
         )}
         <div ref={messagesEndRef} />
       </main>
 
-      <footer className="p-4 border-t border-white/10 dark:border-black/20 z-20 bg-light-bg/80 dark:bg-dark-bg/80 backdrop-blur-sm">
-        <div className="flex items-center bg-white/10 dark:bg-black/20 rounded-2xl">
+      <footer className="sticky bottom-0 p-4 bg-light-bg/80 dark:bg-dark-bg/80 backdrop-blur-sm z-20">
+        <form onSubmit={(e) => { e.preventDefault(); handleSend(input); }} className="relative">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(input); } }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend(input);
+              }
+            }}
             placeholder="Type your message..."
+            className="w-full bg-white/10 dark:bg-black/20 p-4 pr-14 rounded-2xl border border-white/20 dark:border-black/20 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-300 shadow-inner resize-none"
             rows={1}
-            className="flex-1 bg-transparent p-3 pl-4 focus:outline-none resize-none max-h-24"
           />
-          <button onClick={() => handleSend(input)} disabled={isTyping || !input.trim()} className="bg-accent rounded-full h-10 w-10 flex items-center justify-center text-white disabled:opacity-50 transition-all transform hover:scale-110 mr-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-            </svg>
+          <button
+            type="submit"
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-accent rounded-full text-white transition-transform hover:scale-110 disabled:opacity-50"
+            disabled={!input.trim() || isTyping}
+            aria-label="Send message"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14m-7-7 7 7-7 7" /></svg>
           </button>
-        </div>
+        </form>
       </footer>
     </div>
   );

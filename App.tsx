@@ -7,12 +7,13 @@ import PersonasPage from './components/PersonasPage';
 import ImageGeneratorPage from './components/ImageGeneratorPage';
 import ScenarioGeneratorPage from './components/ScenarioGeneratorPage';
 import CodePromptGeneratorPage from './components/CodePromptGeneratorPage';
+import StatsDashboard from './components/StatsDashboard';
 import FooterNav from './components/FooterNav';
 import SettingsPanel from './components/SettingsPanel';
-import type { User, BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference } from './types';
+import type { User, BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference, ChatSession } from './types';
 import { loadUserData, saveUserData, clearUserData } from './services/storageService';
 
-export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'story' | 'code';
+export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'story' | 'code' | 'stats';
 
 // A default user object for the login-free experience
 const defaultUser: User = {
@@ -32,6 +33,7 @@ const App: React.FC = () => {
   const [botToEdit, setBotToEdit] = useState<BotProfile | null>(null);
   const [chatHistories, setChatHistories] = useState<Record<string, ChatMessage[]>>({});
   const [botUsage, setBotUsage] = useState<Record<string, number>>({});
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedAI, setSelectedAI] = useState<AIModelOption>('gemini-2.5-flash');
@@ -47,6 +49,7 @@ const App: React.FC = () => {
         setPersonas(data.personas || []);
         setChatHistories(data.chatHistories || {});
         setBotUsage(data.botUsage || {});
+        setSessions(data.sessions || []);
         setTheme(data.theme || 'dark');
         setSelectedAI(data.selectedAI || 'gemini-2.5-flash');
         setVoicePreference(data.voicePreference || null);
@@ -63,6 +66,7 @@ const App: React.FC = () => {
       personas,
       chatHistories,
       botUsage,
+      sessions,
       theme,
       selectedAI,
       voicePreference,
@@ -70,10 +74,10 @@ const App: React.FC = () => {
     };
     // The initial empty state should not overwrite saved data.
     // This check prevents clearing storage on the very first render.
-    if (bots.length > 0 || personas.length > 0 || Object.keys(botUsage).length > 0) {
+    if (bots.length > 0 || personas.length > 0 || Object.keys(botUsage).length > 0 || sessions.length > 0) {
        saveUserData(dataToSave);
     }
-  }, [bots, personas, chatHistories, botUsage, theme, selectedAI, voicePreference, hasConsented]);
+  }, [bots, personas, chatHistories, botUsage, sessions, theme, selectedAI, voicePreference, hasConsented]);
 
   // Update document theme
   useEffect(() => {
@@ -227,11 +231,17 @@ const App: React.FC = () => {
         setPersonas([]);
         setChatHistories({});
         setBotUsage({});
+        setSessions([]);
       }
   };
 
   const handleConsentChange = (agreed: boolean) => {
     setHasConsented(agreed);
+  };
+
+  const logSession = (startTime: number, botId: string) => {
+    const newSession: ChatSession = { startTime, endTime: Date.now(), botId };
+    setSessions(prev => [...prev, newSession]);
   };
 
   const selectedBot = bots.find(b => b.id === selectedBotId);
@@ -273,6 +283,8 @@ const App: React.FC = () => {
         return <CodePromptGeneratorPage />;
       case 'personas':
         return <PersonasPage personas={personas} bots={bots} onSave={handleSavePersona} onDelete={handleDeletePersona} onAssign={handleAssignPersona} />;
+      case 'stats':
+        return <StatsDashboard bots={bots} personas={personas} chatHistories={chatHistories} sessions={sessions} onBack={() => setCurrentPage('home')} />;
       case 'chat':
         if (effectiveBot) {
           return <ChatView 
@@ -287,6 +299,7 @@ const App: React.FC = () => {
                     onEdit={handleEditBot}
                     onStartNewChat={handleStartNewChat}
                     currentUser={defaultUser}
+                    logSession={logSession}
                  />;
         }
         setCurrentPage('home');
@@ -310,11 +323,12 @@ const App: React.FC = () => {
         onSetVoicePreference={setVoicePreference}
         hasConsented={hasConsented}
         onConsentChange={handleConsentChange}
+        onNavigate={handleNavigate}
       />
       <div className="flex-1 overflow-hidden">
         {renderPage()}
       </div>
-      {currentPage !== 'chat' && (
+      {currentPage !== 'chat' && currentPage !== 'stats' && (
         <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md">
             <FooterNav currentPage={currentPage} onNavigate={handleNavigate} />
         </div>

@@ -1,4 +1,4 @@
-import { BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference } from '../types';
+import { BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference, ChatSession } from '../types';
 
 // This service uses localForage to persist data via IndexedDB,
 // namespaced by user ID.
@@ -14,6 +14,7 @@ interface UserData {
     voicePreference: VoicePreference | null;
     hasConsented: boolean;
     savedImages: string[];
+    sessions: ChatSession[];
 }
 
 const STORAGE_KEY = 'zia_userData';
