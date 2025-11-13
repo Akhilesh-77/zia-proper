@@ -1,7 +1,6 @@
 import { BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference, ChatSession } from '../types';
 
-// This service uses localForage to persist data via IndexedDB,
-// namespaced by user ID.
+// This service uses localForage to persist data via IndexedDB.
 declare const localforage: any;
 
 interface UserData {
@@ -17,36 +16,88 @@ interface UserData {
     sessions: ChatSession[];
 }
 
-const STORAGE_KEY = 'zia_userData';
+const OLD_STORAGE_KEY = 'zia_userData';
 
-// Saves all of the app's data under a single key.
+// Define new keys for individual data pieces
+const KEYS: { [K in keyof UserData]: string } = {
+    bots: 'zia_bots',
+    personas: 'zia_personas',
+    chatHistories: 'zia_chatHistories',
+    botUsage: 'zia_botUsage',
+    theme: 'zia_theme',
+    selectedAI: 'zia_selectedAI',
+    voicePreference: 'zia_voicePreference',
+    hasConsented: 'zia_hasConsented',
+    savedImages: 'zia_savedImages',
+    sessions: 'zia_sessions',
+};
+
+
+// Migrates data from the old single-key format to the new multi-key format.
+export const migrateData = async (): Promise<void> => {
+    try {
+        const oldData = await localforage.getItem(OLD_STORAGE_KEY);
+        if (oldData) {
+            console.log("Old data format found. Migrating to new format...");
+            const data = oldData as UserData;
+            
+            const promises = Object.entries(data).map(([key, value]) => {
+                const newKey = KEYS[key as keyof UserData];
+                if (newKey) {
+                    return localforage.setItem(newKey, value);
+                }
+                return Promise.resolve();
+            });
+
+            await Promise.all(promises);
+            await localforage.removeItem(OLD_STORAGE_KEY);
+            console.log("Migration successful.");
+        }
+    } catch (error) {
+        console.error("Failed during data migration:", error);
+    }
+};
+
+// Saves parts of the app's data under their respective keys.
 export const saveUserData = async (data: Partial<UserData>): Promise<void> => {
     try {
-        // Load existing data to merge, preserving any fields not passed in the new data object
-        const existingData = await loadUserData() || {};
-        const dataToSave = { ...existingData, ...data };
-        await localforage.setItem(STORAGE_KEY, dataToSave);
-    } catch (error)
-        {
+        const promises = Object.entries(data).map(([key, value]) => {
+            const typedKey = key as keyof UserData;
+            if (KEYS[typedKey]) {
+                return localforage.setItem(KEYS[typedKey], value);
+            }
+            return Promise.resolve();
+        });
+        await Promise.all(promises);
+    } catch (error) {
         console.error(`Failed to save data`, error);
     }
 };
 
-// Loads all data for the user.
-export const loadUserData = async (): Promise<UserData | null> => {
+// Loads all data for the user from individual keys.
+export const loadUserData = async (): Promise<Partial<UserData>> => {
     try {
-        const savedData = await localforage.getItem(STORAGE_KEY);
-        return savedData ? (savedData as UserData) : null;
+        const keyNames = Object.keys(KEYS) as (keyof UserData)[];
+        const promises = keyNames.map(keyName => localforage.getItem(KEYS[keyName]));
+        const values = await Promise.all(promises);
+
+        const data: Partial<UserData> = {};
+        keyNames.forEach((key, index) => {
+            if (values[index] !== null && values[index] !== undefined) {
+                (data as any)[key] = values[index];
+            }
+        });
+        return data;
     } catch (error) {
         console.error(`Failed to load data`, error);
-        return null;
+        return {};
     }
 };
 
 // Clears all data for the user.
 export const clearUserData = async (): Promise<void> => {
     try {
-        await localforage.removeItem(STORAGE_KEY);
+        await Promise.all(Object.values(KEYS).map(key => localforage.removeItem(key)));
     } catch (error) {
         console.error(`Failed to clear data`, error);
     }

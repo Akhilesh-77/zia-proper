@@ -163,7 +163,7 @@ const BotCard: React.FC<BotCardProps> = ({ bot, onChat, onEdit, onDelete, onClon
             {modalVisible && <BotPreviewModal bot={bot} onSwiped={onChat} onClose={() => setModalVisible(false)} />}
             <div className="flex-grow">
                 <div className="relative">
-                    <img src={bot.photo} alt={bot.name} className="w-full h-40 object-cover rounded-lg mb-4 cursor-pointer" onClick={() => setModalVisible(true)} />
+                    <img src={bot.photo} alt={bot.name} className="w-full h-40 object-cover rounded-lg mb-4 cursor-pointer" onClick={() => setModalVisible(true)} loading="lazy" />
                 </div>
                 <h3 className="font-bold text-lg">{bot.name}</h3>
                 <p className="text-sm text-gray-400 dark:text-gray-300 flex-1 italic">
@@ -189,4 +189,4 @@ const BotCard: React.FC<BotCardProps> = ({ bot, onChat, onEdit, onDelete, onClon
     );
 };
 
-export default BotCard;
+export default React.memo(BotCard);
