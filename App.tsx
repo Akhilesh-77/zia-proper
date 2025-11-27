@@ -11,7 +11,6 @@ import CodePromptGeneratorPage from './components/CodePromptGeneratorPage';
 import StatsDashboard from './components/StatsDashboard';
 import FooterNav from './components/FooterNav';
 import SettingsPanel from './components/SettingsPanel';
-import ExitConfirmationModal from './components/ExitConfirmationModal';
 import type { User, BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference, ChatSession } from './types';
 import { migrateData, loadUserData, saveUserData, clearUserData } from './services/storageService';
 
@@ -42,12 +41,9 @@ const App: React.FC = () => {
   const [voicePreference, setVoicePreference] = useState<VoicePreference | null>(null);
   const [hasConsented, setHasConsented] = useState<boolean>(false);
   const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false);
-  const [showExitConfirm, setShowExitConfirm] = useState(false);
 
   // Track the previous valid hash to return to after closing settings
   const lastHash = useRef<string>('');
-  // Track if we are intentionally navigating back to exit
-  const isExitingRef = useRef(false);
 
   // Load all data from storage on initial app load and migrate if necessary
   useEffect(() => {
@@ -95,66 +91,6 @@ const App: React.FC = () => {
       document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
-  // --- EXIT CONFIRMATION LOGIC ---
-  useEffect(() => {
-    // 1. Browser Tab Close / Reload Interception
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-        e.preventDefault();
-        e.returnValue = ''; // Standard for Chrome/Firefox
-        return '';
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, []);
-
-  useEffect(() => {
-    // 2. Hardware Back Button Interception (App-like behavior)
-    // Only intercept when we are on the Home page (root level)
-    
-    if (currentPage !== 'home') return;
-
-    // Push a "guard" state when entering home so the back button triggers popstate
-    // instead of immediately leaving the app.
-    const guardState = { appLoc: 'home-guard' };
-    window.history.pushState(guardState, '', window.location.hash);
-
-    const handlePopState = (event: PopStateEvent) => {
-        // If we are exiting intentionally via the modal "Yes", ignore this
-        if (isExitingRef.current) return;
-
-        // If the user pressed back while on home (popping the guard state)
-        // We intercept, show the modal, and restore the guard state.
-        event.preventDefault();
-        setShowExitConfirm(true);
-        window.history.pushState(guardState, '', window.location.hash);
-    };
-
-    window.addEventListener('popstate', handlePopState);
-
-    return () => {
-        window.removeEventListener('popstate', handlePopState);
-        // Clean up: if we are navigating away internally (not exiting),
-        // we might not want to leave the guard state in history, strictly speaking.
-        // However, standard history flow usually handles this fine.
-    };
-  }, [currentPage]);
-
-  const handleConfirmExit = () => {
-      isExitingRef.current = true;
-      setShowExitConfirm(false);
-      // Try to close window (PWA/Standalone) or go back in history (Browser)
-      // Going back twice: once for the guard state, once for the actual page
-      window.history.go(-2); 
-      // Fallback if history isn't deep enough
-      setTimeout(() => window.close(), 100);
-  };
-
-  const handleCancelExit = () => {
-      setShowExitConfirm(false);
-  };
-
-
   // --- HASH ROUTING LOGIC ---
   useEffect(() => {
     if (!isDataLoaded) return;
@@ -193,6 +129,9 @@ const App: React.FC = () => {
           }
           break;
         case '#create':
+          // Explicitly clear edit state only if navigating to 'new' create page is intended
+          // However, we handle the clearing in the handleNavigate function to allow
+          // history navigation (back button) to preserve form state if desired.
           setCurrentPage('create');
           break;
         case '#edit':
@@ -488,12 +427,6 @@ const App: React.FC = () => {
 
   return (
     <div className={`w-full h-full max-w-md mx-auto flex flex-col font-sans shadow-2xl overflow-hidden relative ${theme}`}>
-      {showExitConfirm && (
-        <ExitConfirmationModal 
-            onConfirm={handleConfirmExit} 
-            onCancel={handleCancelExit} 
-        />
-      )}
       <SettingsPanel 
         isOpen={isSettingsOpen} 
         onClose={() => window.location.hash = lastHash.current || '#home'} 
