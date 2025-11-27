@@ -167,7 +167,7 @@ export async function generateStory(
   otherNames: string[],
   scenario: string,
   selectedAI: AIModelOption
-): Promise<string> => {
+): Promise<string> {
   
   const characterProfiles = characters
     .map(c => `- ${c.name}: ${c.personality}`)
@@ -186,7 +186,7 @@ ${characterProfiles}
   `;
 
   return await generateText(systemPrompt, [], selectedAI);
-};
+}
 
 export async function generateScenarioIdea(): Promise<string> {
   try {
