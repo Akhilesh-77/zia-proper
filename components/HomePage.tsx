@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { BotProfile } from '../types';
 import BotCard from './BotCard';
@@ -19,7 +20,8 @@ const HomePage: React.FC<HomePageProps> = ({ bots, botUsage, onSelectBot, onEdit
 
   const sortedBots = [...bots].sort((a, b) => (botUsage[b.id] || 0) - (botUsage[a.id] || 0));
 
-  const trendingBots = sortedBots.slice(0, 8);
+  // Display all sorted bots in the trending section, not just the top 8.
+  const trendingBots = sortedBots;
 
   const renderTrendingSection = (botList: BotProfile[]) => {
     if (botList.length === 0) {

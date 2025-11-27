@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import type { AIModelOption, VoicePreference, BotProfile, Persona, ChatMessage } from '../types';
 import type { Page } from '../App';
@@ -47,8 +48,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, t
   }, []);
 
   const handleNavigateStats = () => {
+    // Navigate using hash directly via window location in parent, or prop.
+    // Since App.tsx passes a handleNavigate that sets hash, we can use that.
     onNavigate('stats');
-    onClose();
+    // We don't manually close here because the hash change listener in App.tsx
+    // will see '#stats' and set isSettingsOpen(false).
   }
 
   return (

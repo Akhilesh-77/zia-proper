@@ -14,6 +14,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
   const [description, setDescription] = useState('');
   const [personality, setPersonality] = useState('');
   const [photo, setPhoto] = useState<string | null>(null);
+  const [originalPhoto, setOriginalPhoto] = useState<string | null>(null);
   const [gif, setGif] = useState<string | null>(null);
   const [scenario, setScenario] = useState('');
   const [chatBackground, setChatBackground] = useState<string | null>(null);
@@ -30,6 +31,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
       setDescription(botToEdit.description);
       setPersonality(botToEdit.personality);
       setPhoto(botToEdit.photo);
+      setOriginalPhoto(botToEdit.originalPhoto || null);
       setGif(botToEdit.gif || null);
       setScenario(botToEdit.scenario);
       setChatBackground(botToEdit.chatBackground || null);
@@ -64,6 +66,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
         description, 
         personality, 
         photo, 
+        originalPhoto,
         gif, 
         scenario, 
         chatBackground, 
@@ -111,6 +114,7 @@ ${personality}`;
                 onCropComplete={(croppedImage) => {
                     if (imageToCrop.type === 'photo') {
                         setPhoto(croppedImage);
+                        setOriginalPhoto(imageToCrop.src); // Store original uncropped image
                     } else {
                         setChatBackground(croppedImage);
                     }

@@ -16,6 +16,7 @@ export interface BotProfile {
   description: string;
   personality: string;
   photo: string; // base64 data URL
+  originalPhoto?: string | null; // base64 data URL (uncropped original)
   gif?: string | null; // base64 data URL
   scenario: string;
   chatBackground?: string | null; // base64 data URL

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import HomePage from './components/HomePage';
 import BotsPage from './components/BotsPage';
 import CreationForm from './components/CreationForm';
@@ -41,6 +42,9 @@ const App: React.FC = () => {
   const [hasConsented, setHasConsented] = useState<boolean>(false);
   const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false);
 
+  // Track the previous valid hash to return to after closing settings
+  const lastHash = useRef<string>('');
+
   // Load all data from storage on initial app load and migrate if necessary
   useEffect(() => {
     const loadAndMigrate = async () => {
@@ -73,27 +77,145 @@ const App: React.FC = () => {
   useEffect(() => { if (isDataLoaded) saveUserData({ voicePreference }); }, [voicePreference, isDataLoaded]);
   useEffect(() => { if (isDataLoaded) saveUserData({ hasConsented }); }, [hasConsented, isDataLoaded]);
 
+  // Persist ephemeral navigation state to sessionStorage for deep linking
+  useEffect(() => {
+    if (selectedBotId) sessionStorage.setItem('selectedBotId', selectedBotId);
+  }, [selectedBotId]);
+
+  useEffect(() => {
+    if (botToEdit) sessionStorage.setItem('editingBotId', botToEdit.id);
+  }, [botToEdit]);
+
   // Update document theme
   useEffect(() => {
       document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
+
+  // --- HASH ROUTING LOGIC ---
+  useEffect(() => {
+    if (!isDataLoaded) return;
+
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+
+      // Manage Settings Overlay
+      if (hash === '#settings') {
+        setIsSettingsOpen(true);
+        // Do not update currentPage, keep the background view
+        return; 
+      } else {
+        setIsSettingsOpen(false);
+        if (hash) lastHash.current = hash; // Update last known valid page hash
+      }
+
+      switch (hash) {
+        case '#home':
+          setCurrentPage('home');
+          break;
+        case '#chatview':
+          // Attempt to restore session if state is lost on reload
+          if (!selectedBotId) {
+             const storedId = sessionStorage.getItem('selectedBotId');
+             // Validate ID exists in current bots
+             if (storedId && bots.some(b => b.id === storedId)) {
+                 setSelectedBotId(storedId);
+                 setCurrentPage('chat');
+             } else {
+                 // Invalid or missing ID, fallback to home
+                 window.location.hash = '#home';
+             }
+          } else {
+             setCurrentPage('chat');
+          }
+          break;
+        case '#create':
+          // Explicitly clear edit state only if navigating to 'new' create page is intended
+          // However, we handle the clearing in the handleNavigate function to allow
+          // history navigation (back button) to preserve form state if desired.
+          setCurrentPage('create');
+          break;
+        case '#edit':
+          if (!botToEdit) {
+             const storedId = sessionStorage.getItem('editingBotId');
+             const bot = bots.find(b => b.id === storedId);
+             if (bot) {
+                 setBotToEdit(bot);
+                 setCurrentPage('create'); // Uses CreationForm
+             } else {
+                 // Clone or Edit state lost
+                 window.location.hash = '#home';
+             }
+          } else {
+             setCurrentPage('create');
+          }
+          break;
+        case '#humans':
+          setCurrentPage('humans');
+          break;
+        case '#images':
+          setCurrentPage('images');
+          break;
+        case '#story':
+          setCurrentPage('story');
+          break;
+        case '#code':
+          setCurrentPage('code');
+          break;
+        case '#stats':
+          setCurrentPage('stats');
+          break;
+        case '#persona':
+          setCurrentPage('personas');
+          break;
+        default:
+          // Default route
+          if (!hash) {
+             window.location.hash = '#home';
+          }
+          break;
+      }
+    };
+
+    // Listen for changes
+    window.addEventListener('hashchange', handleHashChange);
+    
+    // Check initial hash on load
+    handleHashChange();
+
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [isDataLoaded, bots, selectedBotId, botToEdit]);
+
   
   const handleNavigate = useCallback((page: Page) => {
     if ((page === 'create' || page === 'humans') && !hasConsented) {
         alert("Please agree to the disclaimer in the settings to continue.");
-        setIsSettingsOpen(true);
+        window.location.hash = '#settings';
         return;
     }
+    
     if (page === 'create') {
-        setBotToEdit(null);
+        setBotToEdit(null); // Clear edit state for a fresh form
+        sessionStorage.removeItem('editingBotId');
+        window.location.hash = '#create';
+    } else {
+        const hash = {
+            'home': '#home',
+            'humans': '#humans',
+            'images': '#images',
+            'personas': '#persona',
+            'chat': '#chatview',
+            'story': '#story',
+            'code': '#code',
+            'stats': '#stats'
+        }[page];
+        if (hash) window.location.hash = hash;
     }
-    setCurrentPage(page);
   }, [hasConsented]);
   
   const handleSelectBot = useCallback((id: string) => {
     if (!hasConsented) {
         alert("Please agree to the disclaimer in the settings to continue.");
-        setIsSettingsOpen(true);
+        window.location.hash = '#settings';
         return;
     }
     
@@ -116,14 +238,15 @@ const App: React.FC = () => {
     
     setSelectedBotId(id);
     setBotUsage(prev => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
-    setCurrentPage('chat');
+    // Update hash to trigger routing
+    window.location.hash = '#chatview';
   }, [hasConsented, bots]);
 
   const handleEditBot = useCallback((id: string) => {
     const bot = bots.find(b => b.id === id);
     if (bot) {
         setBotToEdit(bot);
-        setCurrentPage('create');
+        window.location.hash = '#edit';
     }
   }, [bots]);
 
@@ -144,12 +267,13 @@ const App: React.FC = () => {
         if (window.confirm(`Are you sure you want to clone "${botToClone.name}"?`)) {
             const newBot: BotProfile = {
                 ...botToClone,
-                id: `bot-${Date.now()}`,
+                id: `bot-${Date.now()}`, // Generate new ID immediately
                 name: `${botToClone.name} (Clone)`,
             };
-            setBots(prev => [newBot, ...prev]);
+            // Note: We don't add to 'bots' state yet, user must save in form.
             setBotToEdit(newBot);
-            setCurrentPage('create');
+            // Use #edit hash to indicate we are editing a specific profile (even if transient)
+            window.location.hash = '#edit';
         }
     }
   }, [bots]);
@@ -261,7 +385,7 @@ const App: React.FC = () => {
                     onCloneBot={handleCloneBot}
                     theme={theme}
                     toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
-                    onOpenSettings={() => setIsSettingsOpen(true)}
+                    onOpenSettings={() => window.location.hash = '#settings'}
                 />;
       case 'humans':
         return <BotsPage bots={bots} onSelectBot={handleSelectBot} onEditBot={handleEditBot} onDeleteBot={handleDeleteBot} onCloneBot={handleCloneBot} />;
@@ -276,12 +400,12 @@ const App: React.FC = () => {
       case 'personas':
         return <PersonasPage personas={personas} bots={bots} onSave={handleSavePersona} onDelete={handleDeletePersona} onAssign={handleAssignPersona} />;
       case 'stats':
-        return <StatsDashboard bots={bots} personas={personas} chatHistories={chatHistories} sessions={sessions} onBack={() => setCurrentPage('home')} />;
+        return <StatsDashboard bots={bots} personas={personas} chatHistories={chatHistories} sessions={sessions} onBack={() => window.location.hash = '#home'} />;
       case 'chat':
         if (effectiveBot) {
           return <ChatView 
                     bot={effectiveBot} 
-                    onBack={() => setCurrentPage('home')}
+                    onBack={() => window.location.hash = '#home'}
                     chatHistory={chatHistories[effectiveBot.id] || []}
                     onNewMessage={(message) => handleNewMessage(effectiveBot.id, message)}
                     onUpdateHistory={(newHistory) => handleUpdateHistory(effectiveBot.id, newHistory)}
@@ -294,7 +418,7 @@ const App: React.FC = () => {
                     logSession={logSession}
                  />;
         }
-        setCurrentPage('home');
+        // If state is invalid for chat, return null, effect will redirect
         return null;
       default:
         return null;
@@ -305,7 +429,7 @@ const App: React.FC = () => {
     <div className={`w-full h-full max-w-md mx-auto flex flex-col font-sans shadow-2xl overflow-hidden relative ${theme}`}>
       <SettingsPanel 
         isOpen={isSettingsOpen} 
-        onClose={() => setIsSettingsOpen(false)} 
+        onClose={() => window.location.hash = lastHash.current || '#home'} 
         theme={theme}
         toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
         onClearData={handleClearData}

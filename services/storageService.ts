@@ -58,20 +58,39 @@ export const migrateData = async (): Promise<void> => {
     }
 };
 
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+let pendingData: Partial<UserData> = {};
+
 // Saves parts of the app's data under their respective keys.
+// Uses debouncing to batch multiple rapid updates (like typing or rapid nav) into fewer DB writes.
 export const saveUserData = async (data: Partial<UserData>): Promise<void> => {
-    try {
-        const promises = Object.entries(data).map(([key, value]) => {
-            const typedKey = key as keyof UserData;
-            if (KEYS[typedKey]) {
-                return localforage.setItem(KEYS[typedKey], value);
-            }
-            return Promise.resolve();
-        });
-        await Promise.all(promises);
-    } catch (error) {
-        console.error(`Failed to save data`, error);
+    // Merge new data into pending queue
+    pendingData = { ...pendingData, ...data };
+
+    // Clear existing timer if any
+    if (saveTimeout) {
+        clearTimeout(saveTimeout);
     }
+
+    // Set a new timer to save data after a short delay
+    saveTimeout = setTimeout(async () => {
+        const dataToSave = { ...pendingData };
+        pendingData = {}; // Clear pending immediately
+        saveTimeout = null;
+
+        try {
+            const promises = Object.entries(dataToSave).map(([key, value]) => {
+                const typedKey = key as keyof UserData;
+                if (KEYS[typedKey]) {
+                    return localforage.setItem(KEYS[typedKey], value);
+                }
+                return Promise.resolve();
+            });
+            await Promise.all(promises);
+        } catch (error) {
+            console.error(`Failed to save data`, error);
+        }
+    }, 500); // 500ms debounce
 };
 
 // Loads all data for the user from individual keys.

@@ -45,8 +45,8 @@ const StatsDashboard: React.FC<StatsDashboardProps> = ({ bots, personas, chatHis
     const totalBots = bots.length;
     const totalPersonas = personas.length;
 
-    // FIX: Replaced `.flat()` with `.reduce()` to fix a type error where the flattened array was not correctly inferred as ChatMessage[].
-    const allMessages: ChatMessage[] = Object.values(chatHistories).reduce((acc, val) => acc.concat(val), []);
+    // Fix: Use generic reduce to safely flatten the array of message arrays.
+    const allMessages: ChatMessage[] = Object.values(chatHistories).reduce<ChatMessage[]>((acc, val) => acc.concat(val), []);
     const userMessages = allMessages.filter(m => m.sender === 'user');
     const botMessages = allMessages.filter(m => m.sender === 'bot');
 

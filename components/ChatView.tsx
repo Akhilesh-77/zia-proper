@@ -1,7 +1,6 @@
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { User, BotProfile, ChatMessage, Persona, AIModelOption, VoicePreference } from '../types';
-import { generateBotResponse, generateUserResponseSuggestion } from '../services/geminiService';
+import { generateBotResponse } from '../services/geminiService';
 
 const PhotoViewer: React.FC<{ src: string; onClose: () => void }> = ({ src, onClose }) => (
     <div
@@ -12,6 +11,94 @@ const PhotoViewer: React.FC<{ src: string; onClose: () => void }> = ({ src, onCl
         <button onClick={onClose} className="absolute top-5 right-5 bg-black/50 text-white rounded-full h-10 w-10 flex items-center justify-center font-bold text-2xl">&times;</button>
     </div>
 );
+
+const ImageCarousel: React.FC<{ images: string[]; onClose: () => void }> = ({ images, onClose }) => {
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const touchStartX = useRef<number | null>(null);
+    const touchEndX = useRef<number | null>(null);
+
+    const minSwipeDistance = 50;
+
+    const onTouchStart = (e: React.TouchEvent) => {
+        touchStartX.current = e.targetTouches[0].clientX;
+        touchEndX.current = null;
+    };
+
+    const onTouchMove = (e: React.TouchEvent) => {
+        touchEndX.current = e.targetTouches[0].clientX;
+    };
+
+    const onTouchEnd = () => {
+        if (touchStartX.current === null || touchEndX.current === null) return;
+        const distance = touchStartX.current - touchEndX.current;
+        const isLeftSwipe = distance > minSwipeDistance;
+        const isRightSwipe = distance < -minSwipeDistance;
+
+        if (isLeftSwipe) {
+            nextSlide();
+        } else if (isRightSwipe) {
+            prevSlide();
+        }
+        // Reset
+        touchStartX.current = null;
+        touchEndX.current = null;
+    };
+
+    const nextSlide = () => {
+        setCurrentIndex((prev) => (prev + 1) % images.length);
+    };
+
+    const prevSlide = () => {
+        setCurrentIndex((prev) => (prev - 1 + images.length) % images.length);
+    };
+    
+    // Determine object-fit based on index: 0 is background (cover), 1 is profile (contain)
+    const currentImage = images[currentIndex];
+    const isBackground = currentIndex === 0;
+
+    return (
+        <div 
+            className="fixed inset-0 z-50 bg-black flex items-center justify-center animate-fadeIn"
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+        >
+            <div key={currentIndex} className="absolute inset-0 w-full h-full animate-fadeIn">
+                <img 
+                    src={currentImage} 
+                    alt={`Preview ${currentIndex}`} 
+                    className={`w-full h-full ${isBackground ? 'object-cover object-left' : 'object-contain object-center'}`}
+                />
+            </div>
+            
+            {/* Navigation Hints */}
+            {images.length > 1 && (
+                <>
+                    <button onClick={(e) => { e.stopPropagation(); prevSlide(); }} className="absolute left-2 top-1/2 -translate-y-1/2 p-2 text-white/50 hover:text-white z-10">
+                         <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); nextSlide(); }} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-white/50 hover:text-white z-10">
+                         <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                    </button>
+                     <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-2 z-10">
+                        {images.map((_, idx) => (
+                            <div key={idx} className={`w-2 h-2 rounded-full transition-colors ${idx === currentIndex ? 'bg-white' : 'bg-white/30'}`} />
+                        ))}
+                    </div>
+                </>
+            )}
+
+            <button 
+                onClick={onClose} 
+                className="absolute top-6 right-6 z-50 bg-black/40 text-white rounded-full w-12 h-12 flex items-center justify-center backdrop-blur-md hover:bg-black/60 transition-all shadow-lg"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+    );
+};
 
 const ChatSettingsModal: React.FC<{
     bot: BotProfile;
@@ -54,6 +141,73 @@ const ChatSettingsModal: React.FC<{
     )
 }
 
+const parseMessage = (text: string) => {
+    if (typeof text !== 'string') {
+      console.warn('parseMessage received non-string input:', text);
+      return '';
+    }
+    const parts = text.split(/(\*.*?\*)/g);
+    return parts.map((part, index) => {
+      if (part.startsWith('*') && part.endsWith('*')) {
+        return <span key={index} className="text-accent italic">{part.slice(1, -1)}</span>;
+      }
+      return part;
+    });
+};
+
+const MessageItem = React.memo(({ 
+    msg, 
+    botAvatar, 
+    userAvatar, 
+    userAvatarAlt, 
+    deletingMessageId, 
+    copiedMessageId, 
+    onCopy, 
+    onDelete, 
+    onPlay, 
+    onRegenerate, 
+    setPhotoToView 
+}: any) => {
+    return (
+        <div 
+            className={`flex items-end gap-2 group ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} transition-opacity duration-300 ${deletingMessageId === msg.id ? 'opacity-0' : 'opacity-100'}`}
+        >
+            {msg.sender === 'bot' && <img src={botAvatar} alt="Bot" className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => setPhotoToView(botAvatar)} />}
+            
+            <div className={`flex items-center gap-2 ${msg.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                <div className={`max-w-xs md:max-w-md lg:max-w-lg p-3 rounded-2xl ${msg.sender === 'user' ? 'bg-accent text-white rounded-br-none' : 'bg-white/10 dark:bg-black/20 rounded-bl-none'}`}>
+                    <p className="whitespace-pre-wrap">{parseMessage(msg.text)}</p>
+                </div>
+                 {msg.sender === 'user' && (
+                    <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => onCopy(msg.text, msg.id)} className="p-1 rounded-full bg-black/30 hover:bg-accent" aria-label="Copy message">
+                            {copiedMessageId === msg.id ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                            ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                            )}
+                        </button>
+                        <button onClick={() => onDelete(msg.id)} className="p-1 rounded-full bg-black/30 hover:bg-red-500" aria-label="Delete message">
+                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                    </div>
+                )}
+                {msg.sender === 'bot' && (
+                    <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => onPlay(msg.text)} className="p-1 rounded-full bg-black/30 hover:bg-accent" aria-label="Play voice"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.108 12 5v14c0 .892-1.077 1.337-1.707.707L5.586 15z" /></svg></button>
+                        <button onClick={() => onRegenerate(msg.id)} className="p-1 rounded-full bg-black/30 hover:bg-accent" aria-label="Regenerate response"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg></button>
+                        <button onClick={() => onDelete(msg.id)} className="p-1 rounded-full bg-black/30 hover:bg-red-500" aria-label="Delete message">
+                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            {msg.sender === 'user' && <img src={userAvatar} alt={userAvatarAlt} className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => setPhotoToView(userAvatar)} />}
+        </div>
+    );
+});
+
 interface ChatViewProps {
   bot: BotProfile & { persona?: Persona | null };
   onBack: () => void;
@@ -75,6 +229,7 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [photoToView, setPhotoToView] = useState<string | null>(null);
+  const [showCarousel, setShowCarousel] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [tempBrightness, setTempBrightness] = useState(bot.chatBackgroundBrightness ?? 100);
@@ -84,9 +239,37 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
   
   const menuRef = useRef<HTMLDivElement>(null);
   
-  const botAvatar = bot.photo; // Bot avatar is always the bot's own photo.
-  const userAvatar = bot.persona?.photo || currentUser.photoUrl; // User avatar uses persona photo if available, otherwise the default user photo.
+  const botAvatar = bot.photo; 
+  const userAvatar = bot.persona?.photo || currentUser.photoUrl; 
   const userAvatarAlt = bot.persona?.name || currentUser.name || 'User';
+
+  // Prepare images for carousel (Background first, then Original Photo or Crop)
+  const carouselImages = useMemo(() => {
+      const images = [];
+      if (bot.chatBackground) images.push(bot.chatBackground);
+      
+      // Use original uncropped photo if available, otherwise fallback to the cropped photo
+      if (bot.originalPhoto) {
+          images.push(bot.originalPhoto);
+      } else if (bot.photo) {
+          images.push(bot.photo);
+      }
+      return images;
+  }, [bot.chatBackground, bot.originalPhoto, bot.photo]);
+
+  // Preload images for smoother experience
+  useEffect(() => {
+    if (bot.chatBackground) {
+        const bgImg = new Image();
+        bgImg.src = bot.chatBackground;
+    }
+    if (bot.originalPhoto) {
+        const origImg = new Image();
+        origImg.src = bot.originalPhoto;
+    }
+    const avatarImg = new Image();
+    avatarImg.src = botAvatar;
+  }, [bot.chatBackground, bot.originalPhoto, botAvatar]);
 
   useEffect(() => {
     // Log session start time on mount and log end time on unmount
@@ -98,7 +281,7 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatHistory]);
+  }, [chatHistory, isTyping]);
   
   useEffect(() => {
     const loadVoices = () => {
@@ -129,17 +312,17 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
   }, []);
 
 
-  const handlePlayVoice = (text: string) => {
+  const handlePlayVoice = useCallback((text: string) => {
     window.speechSynthesis.cancel(); // Stop any currently playing speech
     const utterance = new SpeechSynthesisUtterance(text);
     if (voicePreference && voices.length > 0) {
         const desiredVoice = voices.find(v => v.name === voicePreference) || 
-                             voices.find(v => voicePreference && v.name.toLowerCase().includes(voicePreference)) || // Fallback for old 'male'/'female' setting
+                             voices.find(v => voicePreference && v.name.toLowerCase().includes(voicePreference)) || 
                              voices[0];
         utterance.voice = desiredVoice || voices[0];
     }
     window.speechSynthesis.speak(utterance);
-  };
+  }, [voicePreference, voices]);
 
 
   const handleSend = async (messageText: string) => {
@@ -181,25 +364,25 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
     }
   };
 
-  const handleCopyMessage = (text: string, messageId: string) => {
+  const handleCopyMessage = useCallback((text: string, messageId: string) => {
     navigator.clipboard.writeText(text).then(() => {
         setCopiedMessageId(messageId);
         setTimeout(() => setCopiedMessageId(null), 2000);
     }).catch(err => {
         console.error("Failed to copy message:", err);
     });
-  };
+  }, []);
 
-  const handleDeleteMessage = (messageId: string) => {
+  const handleDeleteMessage = useCallback((messageId: string) => {
       setDeletingMessageId(messageId);
       setTimeout(() => {
         const newHistory = chatHistory.filter(m => m.id !== messageId);
         onUpdateHistory(newHistory);
         setDeletingMessageId(null);
       }, 300); // Animation duration
-  };
+  }, [chatHistory, onUpdateHistory]);
   
-  const handleRegenerateMessage = async (messageId: string) => {
+  const handleRegenerateMessage = useCallback(async (messageId: string) => {
       const messageIndex = chatHistory.findIndex(m => m.id === messageId);
       if (messageIndex === -1 || chatHistory[messageIndex].sender !== 'bot') return;
 
@@ -216,28 +399,17 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
       } finally {
           setIsTyping(false);
       }
-  };
+  }, [chatHistory, bot.personality, bot.isSpicy, selectedAI, onUpdateHistory]);
 
-  const parseMessage = (text: string) => {
-    if (typeof text !== 'string') {
-      console.warn('parseMessage received non-string input:', text);
-      return '';
-    }
-    // This regex splits the text by actions wrapped in single asterisks, keeping the delimiters.
-    const parts = text.split(/(\*.*?\*)/g);
-    return parts.map((part, index) => {
-      // If a part is an action (e.g., "*smiles*"), render it as blue, italic text without the asterisks.
-      if (part.startsWith('*') && part.endsWith('*')) {
-        return <span key={index} className="text-accent italic">{part.slice(1, -1)}</span>;
-      }
-      // Otherwise, render the part as plain text (dialogue, spaces, etc.).
-      return part;
-    });
-  };
-  
   const handleEditClick = (e: React.MouseEvent) => {
     e.preventDefault();
     onEdit(bot.id);
+    setIsMenuOpen(false);
+  };
+
+  const handlePersonaClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    window.location.hash = '#persona';
     setIsMenuOpen(false);
   };
 
@@ -269,9 +441,13 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
     onUpdateBot({ ...bot, chatBackgroundBrightness: newBrightness });
   };
 
+
   return (
     <div className="h-full w-full flex flex-col bg-light-bg text-light-text dark:bg-dark-bg dark:text-dark-text relative">
         {photoToView && <PhotoViewer src={photoToView} onClose={() => setPhotoToView(null)} />}
+        {showCarousel && (
+            <ImageCarousel images={carouselImages} onClose={() => setShowCarousel(false)} />
+        )}
         {isSettingsOpen && (
             <ChatSettingsModal 
                 bot={bot}
@@ -307,6 +483,7 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
             {isMenuOpen && (
                 <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-lg shadow-xl animate-fadeIn z-30">
                     <a href="#" onClick={handleEditClick} className="block px-4 py-2 text-sm text-white hover:bg-accent rounded-t-lg">Edit Human</a>
+                    <a href="#" onClick={handlePersonaClick} className="block px-4 py-2 text-sm text-white hover:bg-accent">Persona</a>
                     <a href="#" onClick={handleOpenSettings} className="block px-4 py-2 text-sm text-white hover:bg-accent">Chat Settings</a>
                     <a href="#" onClick={handleCopyPrompt} className="block px-4 py-2 text-sm text-white hover:bg-accent">{copySuccess ? 'Copied!' : 'Copy Prompt'}</a>
                     <a href="#" onClick={handleNewChatClick} className="block px-4 py-2 text-sm text-white hover:bg-accent rounded-b-lg">Start New Chat</a>
@@ -317,43 +494,20 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
 
       <main className="flex-1 overflow-y-auto p-4 space-y-1 z-10">
         {chatHistory.map((msg) => (
-          <div 
-            key={msg.id} 
-            className={`flex items-end gap-2 group ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} transition-opacity duration-300 ${deletingMessageId === msg.id ? 'opacity-0' : 'opacity-100'}`}
-          >
-            {msg.sender === 'bot' && <img src={botAvatar} alt={bot.name} className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => setPhotoToView(botAvatar)} />}
-            
-            <div className={`flex items-center gap-2 ${msg.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                <div className={`max-w-xs md:max-w-md lg:max-w-lg p-3 rounded-2xl ${msg.sender === 'user' ? 'bg-accent text-white rounded-br-none' : 'bg-white/10 dark:bg-black/20 rounded-bl-none'}`}>
-                    <p className="whitespace-pre-wrap">{parseMessage(msg.text)}</p>
-                </div>
-                 {msg.sender === 'user' && (
-                    <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => handleCopyMessage(msg.text, msg.id)} className="p-1 rounded-full bg-black/30 hover:bg-accent" aria-label="Copy message">
-                            {copiedMessageId === msg.id ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                            ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                            )}
-                        </button>
-                        <button onClick={() => handleDeleteMessage(msg.id)} className="p-1 rounded-full bg-black/30 hover:bg-red-500" aria-label="Delete message">
-                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        </button>
-                    </div>
-                )}
-                {msg.sender === 'bot' && (
-                    <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => handlePlayVoice(msg.text)} className="p-1 rounded-full bg-black/30 hover:bg-accent" aria-label="Play voice"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.108 12 5v14c0 .892-1.077 1.337-1.707.707L5.586 15z" /></svg></button>
-                        <button onClick={() => handleRegenerateMessage(msg.id)} className="p-1 rounded-full bg-black/30 hover:bg-accent" aria-label="Regenerate response"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg></button>
-                        <button onClick={() => handleDeleteMessage(msg.id)} className="p-1 rounded-full bg-black/30 hover:bg-red-500" aria-label="Delete message">
-                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            {msg.sender === 'user' && <img src={userAvatar} alt={userAvatarAlt} className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => setPhotoToView(userAvatar)} />}
-          </div>
+            <MessageItem 
+                key={msg.id}
+                msg={msg}
+                botAvatar={botAvatar}
+                userAvatar={userAvatar}
+                userAvatarAlt={userAvatarAlt}
+                deletingMessageId={deletingMessageId}
+                copiedMessageId={copiedMessageId}
+                onCopy={handleCopyMessage}
+                onDelete={handleDeleteMessage}
+                onPlay={handlePlayVoice}
+                onRegenerate={handleRegenerateMessage}
+                setPhotoToView={setPhotoToView}
+            />
         ))}
 
         {isTyping && (
@@ -373,6 +527,18 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
 
       <footer className="sticky bottom-0 p-4 bg-light-bg/80 dark:bg-dark-bg/80 backdrop-blur-sm z-20">
         <form onSubmit={(e) => { e.preventDefault(); handleSend(input); }} className="relative">
+          {bot.chatBackground && (
+            <button 
+                type="button"
+                onClick={() => setShowCarousel(true)}
+                className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full text-gray-400 hover:text-accent transition-colors z-10"
+                aria-label="View background"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+            </button>
+          )}
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -383,7 +549,7 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
               }
             }}
             placeholder="Type your message..."
-            className="w-full bg-white/10 dark:bg-black/20 p-4 pr-14 rounded-2xl border border-white/20 dark:border-black/20 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-300 shadow-inner resize-none"
+            className={`w-full bg-white/10 dark:bg-black/20 p-4 pr-14 rounded-2xl border border-white/20 dark:border-black/20 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-300 shadow-inner resize-none ${bot.chatBackground ? 'pl-14' : ''}`}
             rows={1}
           />
           <button
