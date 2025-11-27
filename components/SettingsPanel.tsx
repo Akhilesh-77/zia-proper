@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import type { AIModelOption, VoicePreference, BotProfile, Persona, ChatMessage } from '../types';
 import type { Page } from '../App';
@@ -53,6 +52,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, t
     onNavigate('stats');
     // We don't manually close here because the hash change listener in App.tsx
     // will see '#stats' and set isSettingsOpen(false).
+  }
+
+  const handleNavigateBin = () => {
+    // Manually set hash to #bin, App.tsx will handle the routing
+    window.location.hash = '#bin';
   }
 
   return (
@@ -123,12 +127,21 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, t
 
                 <div className="bg-white/5 dark:bg-black/10 p-4 rounded-xl space-y-3">
                     <p className="font-medium">App Tools</p>
-                    <button 
-                        onClick={handleNavigateStats}
-                        className="w-full bg-accent/80 text-white font-bold py-2 px-4 rounded-lg transition-colors hover:bg-accent"
-                    >
-                        Usage Stats
-                    </button>
+                    <div className="grid grid-cols-2 gap-3">
+                        <button 
+                            onClick={handleNavigateStats}
+                            className="bg-accent/80 text-white font-bold py-2 px-3 rounded-lg transition-colors hover:bg-accent flex items-center justify-center gap-1 text-sm"
+                        >
+                            Usage Stats
+                        </button>
+                         <button 
+                            onClick={handleNavigateBin}
+                            className="bg-gray-700 text-white font-bold py-2 px-3 rounded-lg transition-colors hover:bg-gray-600 flex items-center justify-center gap-1 text-sm"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            Bin
+                        </button>
+                    </div>
                 </div>
 
                 <div className="bg-white/5 dark:bg-black/10 p-4 rounded-xl space-y-3">

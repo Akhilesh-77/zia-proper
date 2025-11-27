@@ -9,12 +9,14 @@ import ImageGeneratorPage from './components/ImageGeneratorPage';
 import ScenarioGeneratorPage from './components/ScenarioGeneratorPage';
 import CodePromptGeneratorPage from './components/CodePromptGeneratorPage';
 import StatsDashboard from './components/StatsDashboard';
+import RecycleBinPage from './components/RecycleBinPage';
 import FooterNav from './components/FooterNav';
 import SettingsPanel from './components/SettingsPanel';
+import ExitConfirmationModal from './components/ExitConfirmationModal';
 import type { User, BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference, ChatSession } from './types';
 import { migrateData, loadUserData, saveUserData, clearUserData } from './services/storageService';
 
-export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'story' | 'code' | 'stats';
+export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'story' | 'code' | 'stats' | 'bin';
 
 // A default user object for the login-free experience
 const defaultUser: User = {
@@ -41,6 +43,14 @@ const App: React.FC = () => {
   const [voicePreference, setVoicePreference] = useState<VoicePreference | null>(null);
   const [hasConsented, setHasConsented] = useState<boolean>(false);
   const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false);
+  
+  // Recycle Bin State
+  const [deletedBots, setDeletedBots] = useState<BotProfile[]>([]);
+  const [deletedPersonas, setDeletedPersonas] = useState<Persona[]>([]);
+
+  // Exit Confirmation
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const backPressTime = useRef<number>(0);
 
   // Track the previous valid hash to return to after closing settings
   const lastHash = useRef<string>('');
@@ -60,6 +70,8 @@ const App: React.FC = () => {
         setSelectedAI(data.selectedAI || 'gemini-2.5-flash');
         setVoicePreference(data.voicePreference || null);
         setHasConsented(data.hasConsented || false);
+        setDeletedBots(data.deletedBots || []);
+        setDeletedPersonas(data.deletedPersonas || []);
       }
       setIsDataLoaded(true);
     };
@@ -76,6 +88,8 @@ const App: React.FC = () => {
   useEffect(() => { if (isDataLoaded) saveUserData({ selectedAI }); }, [selectedAI, isDataLoaded]);
   useEffect(() => { if (isDataLoaded) saveUserData({ voicePreference }); }, [voicePreference, isDataLoaded]);
   useEffect(() => { if (isDataLoaded) saveUserData({ hasConsented }); }, [hasConsented, isDataLoaded]);
+  useEffect(() => { if (isDataLoaded) saveUserData({ deletedBots }); }, [deletedBots, isDataLoaded]);
+  useEffect(() => { if (isDataLoaded) saveUserData({ deletedPersonas }); }, [deletedPersonas, isDataLoaded]);
 
   // Persist ephemeral navigation state to sessionStorage for deep linking
   useEffect(() => {
@@ -167,6 +181,9 @@ const App: React.FC = () => {
         case '#persona':
           setCurrentPage('personas');
           break;
+        case '#bin':
+          setCurrentPage('bin');
+          break;
         default:
           // Default route
           if (!hash) {
@@ -185,6 +202,52 @@ const App: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [isDataLoaded, bots, selectedBotId, botToEdit]);
 
+  // --- EXIT CONFIRMATION LOGIC ---
+  useEffect(() => {
+      // 1. Intercept Back Button on Home Page
+      const onPopState = (event: PopStateEvent) => {
+          if (currentPage === 'home' && !isSettingsOpen) {
+               // Prevent navigation
+               event.preventDefault(); 
+               
+               // Show confirmation modal
+               setShowExitConfirm(true);
+               
+               // Push state again so we stay on "home" URL-wise effectively
+               window.history.pushState(null, '', '#home');
+          }
+      };
+
+      // Push initial state to allow interception
+      if (currentPage === 'home' && !isSettingsOpen) {
+          window.history.pushState(null, '', '#home');
+      }
+
+      window.addEventListener('popstate', onPopState);
+
+      // 2. Intercept Tab/Window Close
+      const onBeforeUnload = (e: BeforeUnloadEvent) => {
+          // Standard way to trigger browser confirmation
+          e.preventDefault();
+          e.returnValue = ''; 
+          return '';
+      };
+      window.addEventListener('beforeunload', onBeforeUnload);
+
+      return () => {
+          window.removeEventListener('popstate', onPopState);
+          window.removeEventListener('beforeunload', onBeforeUnload);
+      };
+  }, [currentPage, isSettingsOpen]);
+
+  const handleConfirmExit = () => {
+      // Logic to actually "exit" or close
+      // On mobile web/PWA, window.close() scripts may be blocked,
+      // but we can try history.back() multiple times or standard close.
+      window.close(); 
+      // Fallback
+      window.history.go(-2);
+  };
   
   const handleNavigate = useCallback((page: Page) => {
     if ((page === 'create' || page === 'humans') && !hasConsented) {
@@ -206,7 +269,8 @@ const App: React.FC = () => {
             'chat': '#chatview',
             'story': '#story',
             'code': '#code',
-            'stats': '#stats'
+            'stats': '#stats',
+            'bin': '#bin'
         }[page];
         if (hash) window.location.hash = hash;
     }
@@ -251,15 +315,17 @@ const App: React.FC = () => {
   }, [bots]);
 
   const handleDeleteBot = useCallback((id: string) => {
-    if (window.confirm("Are you sure you want to delete this Human?")) {
-        setBots(prev => prev.filter(b => b.id !== id));
-        setChatHistories(prev => {
-            const newHistories = { ...prev };
-            delete newHistories[id];
-            return newHistories;
-        });
+    const botToDelete = bots.find(b => b.id === id);
+    if (botToDelete) {
+        if (window.confirm("Are you sure you want to delete this Human? It will be moved to the Bin.")) {
+            // Move to deleted bots
+            setDeletedBots(prev => [...prev, botToDelete]);
+            // Remove from active bots
+            setBots(prev => prev.filter(b => b.id !== id));
+            // Keep chat history in case of restore
+        }
     }
-  }, []);
+  }, [bots]);
 
   const handleCloneBot = useCallback((id: string) => {
     const botToClone = bots.find(b => b.id === id);
@@ -298,11 +364,18 @@ const App: React.FC = () => {
   }, []);
 
   const handleDeletePersona = useCallback((id: string) => {
-    if (window.confirm("Are you sure you want to delete this persona? This will not affect Humans currently using it, but they will no longer be linked.")) {
-        setPersonas(prev => prev.filter(p => p.id !== id));
-        setBots(prev => prev.map(b => b.personaId === id ? { ...b, personaId: null } : b));
-    }
-  }, []);
+      const personaToDelete = personas.find(p => p.id === id);
+      if (personaToDelete) {
+          if (window.confirm("Are you sure you want to delete this persona? It will be moved to the Bin.")) {
+              // Move to deleted personas
+              setDeletedPersonas(prev => [...prev, personaToDelete]);
+              // Remove from active personas
+              setPersonas(prev => prev.filter(p => p.id !== id));
+              // Unlink from active bots
+              setBots(prev => prev.map(b => b.personaId === id ? { ...b, personaId: null } : b));
+          }
+      }
+  }, [personas]);
   
   const handleAssignPersona = useCallback((personaId: string, botIds: string[]) => {
       setBots(prevBots => prevBots.map(bot => {
@@ -350,6 +423,8 @@ const App: React.FC = () => {
         setChatHistories({});
         setBotUsage({});
         setSessions([]);
+        setDeletedBots([]);
+        setDeletedPersonas([]);
       }
   }, []);
 
@@ -361,6 +436,40 @@ const App: React.FC = () => {
     const newSession: ChatSession = { startTime, endTime: Date.now(), botId };
     setSessions(prev => [...prev, newSession]);
   }, []);
+
+  // Recycle Bin Functions
+  const handleRestoreBot = useCallback((bot: BotProfile) => {
+      setDeletedBots(prev => prev.filter(b => b.id !== bot.id));
+      setBots(prev => [...prev, bot]);
+  }, []);
+
+  const handlePermanentDeleteBot = useCallback((id: string) => {
+      if (window.confirm("Delete this Human forever? This action cannot be undone and chat history will be lost.")) {
+          setDeletedBots(prev => prev.filter(b => b.id !== id));
+          setChatHistories(prev => {
+              const newHistories = { ...prev };
+              delete newHistories[id];
+              return newHistories;
+          });
+          setBotUsage(prev => {
+              const newUsage = { ...prev };
+              delete newUsage[id];
+              return newUsage;
+          });
+      }
+  }, []);
+
+  const handleRestorePersona = useCallback((persona: Persona) => {
+      setDeletedPersonas(prev => prev.filter(p => p.id !== persona.id));
+      setPersonas(prev => [...prev, persona]);
+  }, []);
+
+  const handlePermanentDeletePersona = useCallback((id: string) => {
+      if (window.confirm("Delete this Persona forever? This action cannot be undone.")) {
+          setDeletedPersonas(prev => prev.filter(p => p.id !== id));
+      }
+  }, []);
+
 
   const selectedBot = bots.find(b => b.id === selectedBotId);
   const personaForBot = personas.find(p => p.id === selectedBot?.personaId);
@@ -401,6 +510,15 @@ const App: React.FC = () => {
         return <PersonasPage personas={personas} bots={bots} onSave={handleSavePersona} onDelete={handleDeletePersona} onAssign={handleAssignPersona} />;
       case 'stats':
         return <StatsDashboard bots={bots} personas={personas} chatHistories={chatHistories} sessions={sessions} onBack={() => window.location.hash = '#home'} />;
+      case 'bin':
+        return <RecycleBinPage 
+                  deletedBots={deletedBots}
+                  deletedPersonas={deletedPersonas}
+                  onRestoreBot={handleRestoreBot}
+                  onPermanentDeleteBot={handlePermanentDeleteBot}
+                  onRestorePersona={handleRestorePersona}
+                  onPermanentDeletePersona={handlePermanentDeletePersona}
+               />;
       case 'chat':
         if (effectiveBot) {
           return <ChatView 
@@ -427,6 +545,12 @@ const App: React.FC = () => {
 
   return (
     <div className={`w-full h-full max-w-md mx-auto flex flex-col font-sans shadow-2xl overflow-hidden relative ${theme}`}>
+      {showExitConfirm && (
+          <ExitConfirmationModal 
+            onConfirm={handleConfirmExit} 
+            onCancel={() => setShowExitConfirm(false)} 
+          />
+      )}
       <SettingsPanel 
         isOpen={isSettingsOpen} 
         onClose={() => window.location.hash = lastHash.current || '#home'} 
@@ -444,7 +568,7 @@ const App: React.FC = () => {
       <div className="flex-1 overflow-hidden">
         {renderPage()}
       </div>
-      {currentPage !== 'chat' && currentPage !== 'stats' && (
+      {currentPage !== 'chat' && currentPage !== 'stats' && currentPage !== 'bin' && (
         <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md">
             <FooterNav currentPage={currentPage} onNavigate={handleNavigate} />
         </div>

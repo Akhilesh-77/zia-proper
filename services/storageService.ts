@@ -14,6 +14,8 @@ interface UserData {
     hasConsented: boolean;
     savedImages: string[];
     sessions: ChatSession[];
+    deletedBots: BotProfile[];
+    deletedPersonas: Persona[];
 }
 
 const OLD_STORAGE_KEY = 'zia_userData';
@@ -30,6 +32,8 @@ const KEYS: { [K in keyof UserData]: string } = {
     hasConsented: 'zia_hasConsented',
     savedImages: 'zia_savedImages',
     sessions: 'zia_sessions',
+    deletedBots: 'zia_deletedBots',
+    deletedPersonas: 'zia_deletedPersonas',
 };
 
 
