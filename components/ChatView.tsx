@@ -5,84 +5,294 @@ import { generateBotResponse } from '../services/geminiService';
 
 const PhotoViewer: React.FC<{ src: string; onClose: () => void }> = ({ src, onClose }) => (
     <div
-        className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate-fadeIn"
+        className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 animate-fadeIn"
         onClick={onClose}
     >
-        <img src={src} alt="Full view" className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl" />
-        <button onClick={onClose} className="absolute top-5 right-5 bg-black/50 text-white rounded-full h-10 w-10 flex items-center justify-center font-bold text-2xl">&times;</button>
+        <img src={src} alt="Full view" className="max-w-[95vw] max-h-[95vh] object-contain rounded-lg shadow-2xl" />
+        <button onClick={onClose} className="absolute top-5 right-5 bg-black/50 text-white rounded-full h-10 w-10 flex items-center justify-center font-bold text-2xl z-50">&times;</button>
     </div>
 );
 
 const ImageCarousel: React.FC<{ images: string[]; onClose: () => void; onSetBackground: (img: string) => void }> = ({ images, onClose, onSetBackground }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
-    const touchStartX = useRef<number | null>(null);
-    const touchEndX = useRef<number | null>(null);
+    const [isZoomed, setIsZoomed] = useState(false); // Track if currently zoomed for UI hints
+    
+    const imgRef = useRef<HTMLImageElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
 
-    const minSwipeDistance = 50;
+    // Gesture State
+    // We use a ref to track gesture state to avoid re-renders during 60fps gesture handling
+    const gesture = useRef({
+        startX: 0,
+        startY: 0,
+        startScale: 1,
+        startDist: 0,
+        x: 0,
+        y: 0,
+        scale: 1,
+        isPinching: false,
+        isPanning: false,
+        lastTap: 0,
+        pointers: new Map<number, { x: number, y: number }>() // Track multiple fingers
+    });
 
-    const onTouchStart = (e: React.TouchEvent) => {
-        touchStartX.current = e.targetTouches[0].clientX;
-        touchEndX.current = null;
-    };
+    // Helper: Safe modulo for infinite loop
+    const getIndex = (i: number) => ((i % images.length) + images.length) % images.length;
 
-    const onTouchMove = (e: React.TouchEvent) => {
-        touchEndX.current = e.targetTouches[0].clientX;
-    };
-
-    const onTouchEnd = () => {
-        if (touchStartX.current === null || touchEndX.current === null) return;
-        const distance = touchStartX.current - touchEndX.current;
-        const isLeftSwipe = distance > minSwipeDistance;
-        const isRightSwipe = distance < -minSwipeDistance;
-
-        if (isLeftSwipe) {
-            nextSlide();
-        } else if (isRightSwipe) {
-            prevSlide();
+    // Reset transform when index changes or component mounts
+    useEffect(() => {
+        gesture.current = { 
+            ...gesture.current, 
+            x: 0, 
+            y: 0, 
+            scale: 1, 
+            isPinching: false, 
+            isPanning: false,
+            pointers: new Map()
+        };
+        setIsZoomed(false);
+        if (imgRef.current) {
+            imgRef.current.style.transform = `translate(0px, 0px) scale(1)`;
+            imgRef.current.style.transition = 'transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)';
         }
-        // Reset
-        touchStartX.current = null;
-        touchEndX.current = null;
+    }, [currentIndex]);
+
+    const updateTransform = (withTransition = false) => {
+        if (imgRef.current) {
+            const { x, y, scale } = gesture.current;
+            imgRef.current.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+            imgRef.current.style.transition = withTransition ? 'transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)' : 'none';
+        }
+    };
+
+    const getDistance = (p1: { x: number, y: number }, p2: { x: number, y: number }) => {
+        return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    };
+
+    const getCenter = (p1: { x: number, y: number }, p2: { x: number, y: number }) => {
+        return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    };
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        // Prevent default to stop browser scrolling/zooming
+        // e.preventDefault(); // Note: React's synthetic event might not support preventDefault in time for passive listeners, relying on CSS touch-action
+
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            const t = e.changedTouches[i];
+            gesture.current.pointers.set(t.identifier, { x: t.clientX, y: t.clientY });
+        }
+
+        const pointers = Array.from(gesture.current.pointers.values());
+
+        if (pointers.length === 1) {
+            // Single finger: Start Pan or Swipe check
+            const p = pointers[0];
+            gesture.current.startX = p.x;
+            gesture.current.startY = p.y;
+            gesture.current.isPanning = gesture.current.scale > 1; // Only pan if zoomed
+        } else if (pointers.length === 2) {
+            // Two fingers: Start Pinch
+            const dist = getDistance(pointers[0], pointers[1]);
+            gesture.current.startDist = dist;
+            gesture.current.startScale = gesture.current.scale;
+            gesture.current.isPinching = true;
+            gesture.current.isPanning = true; // Allow panning while pinching
+            
+            // Recalculate start coordinates for pan relative to center of pinch
+            const center = getCenter(pointers[0], pointers[1]);
+            gesture.current.startX = center.x;
+            gesture.current.startY = center.y;
+        }
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            const t = e.changedTouches[i];
+            gesture.current.pointers.set(t.identifier, { x: t.clientX, y: t.clientY });
+        }
+
+        const pointers = Array.from(gesture.current.pointers.values());
+
+        if (gesture.current.isPinching && pointers.length === 2) {
+            // Pinch Logic
+            const dist = getDistance(pointers[0], pointers[1]);
+            const scaleChange = dist / gesture.current.startDist;
+            let newScale = gesture.current.startScale * scaleChange;
+            
+            // Limit scale
+            newScale = Math.max(1, Math.min(newScale, 5));
+            gesture.current.scale = newScale;
+            setIsZoomed(newScale > 1.05);
+
+            // Pan Logic during pinch
+            const center = getCenter(pointers[0], pointers[1]);
+            const dx = center.x - gesture.current.startX;
+            const dy = center.y - gesture.current.startY;
+            
+            // Accumulate movement is tricky with React ref state during pinch
+            // For simplicity, we just add the delta to the existing position
+            // But to avoid drift, a more complex matrix approach is usually needed
+            // Here we use a simpler approach: update position by delta
+            
+            gesture.current.x += dx;
+            gesture.current.y += dy;
+            gesture.current.startX = center.x; // Reset start for next frame
+            gesture.current.startY = center.y;
+
+            updateTransform();
+
+        } else if (pointers.length === 1) {
+            const p = pointers[0];
+            const dx = p.x - gesture.current.startX;
+            const dy = p.y - gesture.current.startY;
+
+            if (gesture.current.scale > 1) {
+                // Pan Logic
+                gesture.current.x += dx;
+                gesture.current.y += dy;
+                gesture.current.startX = p.x;
+                gesture.current.startY = p.y;
+                updateTransform();
+            } else {
+                // Swipe intent tracking (visual feedback could be added here)
+                // For now, we just track delta on end
+            }
+        }
+    };
+
+    const handleTouchEnd = (e: React.TouchEvent) => {
+        // Remove released pointers
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            gesture.current.pointers.delete(e.changedTouches[i].identifier);
+        }
+
+        // If pinching ended but 1 finger remains, reset start pos for that finger to avoid jumping
+        if (gesture.current.isPinching && gesture.current.pointers.size < 2) {
+            gesture.current.isPinching = false;
+            if (gesture.current.pointers.size === 1) {
+                const p = Array.from(gesture.current.pointers.values())[0];
+                gesture.current.startX = p.x;
+                gesture.current.startY = p.y;
+            }
+        }
+
+        // Snap back logic if all fingers released
+        if (gesture.current.pointers.size === 0) {
+            if (gesture.current.scale < 1) {
+                gesture.current.scale = 1;
+                gesture.current.x = 0;
+                gesture.current.y = 0;
+                setIsZoomed(false);
+                updateTransform(true);
+            } else if (gesture.current.scale === 1) {
+                // Swipe Detection
+                const touch = e.changedTouches[0];
+                const dx = touch.clientX - gesture.current.startX;
+                const dy = touch.clientY - gesture.current.startY;
+                const swipeThreshold = 50; // px
+
+                if (Math.abs(dx) > swipeThreshold || Math.abs(dy) > swipeThreshold) {
+                    // Determine dominant direction
+                    if (Math.abs(dx) > Math.abs(dy)) {
+                        // Horizontal
+                        if (dx > 0) prevSlide(); // Right swipe -> Prev
+                        else nextSlide();        // Left swipe -> Next
+                    } else {
+                        // Vertical
+                        // "Vertical ... unlimited scroll"
+                        if (dy > 0) prevSlide(); // Down swipe -> Prev (or could be Next, arbitrary choice for "scroll")
+                        else nextSlide();        // Up swipe -> Next
+                    }
+                } else {
+                    // Tap detection (if movement was minimal)
+                    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+                        handleDoubleTap(touch.clientX, touch.clientY);
+                    }
+                }
+                
+                // Reset position if we didn't change index but moved slightly
+                gesture.current.x = 0;
+                gesture.current.y = 0;
+                updateTransform(true);
+            }
+            gesture.current.isPanning = false;
+        }
+    };
+
+    const handleDoubleTap = (clientX: number, clientY: number) => {
+        const now = Date.now();
+        if (now - gesture.current.lastTap < 300) {
+            // Double tap detected
+            if (gesture.current.scale > 1) {
+                // Reset
+                gesture.current.scale = 1;
+                gesture.current.x = 0;
+                gesture.current.y = 0;
+                setIsZoomed(false);
+            } else {
+                // Zoom in
+                gesture.current.scale = 2.5;
+                // Center zoom on tap? For simplicity without complex matrix math, just zoom center or reset offset
+                gesture.current.x = 0;
+                gesture.current.y = 0;
+                setIsZoomed(true);
+            }
+            updateTransform(true);
+        }
+        gesture.current.lastTap = now;
     };
 
     const nextSlide = () => {
-        setCurrentIndex((prev) => (prev + 1) % images.length);
+        setCurrentIndex(prev => getIndex(prev + 1));
     };
 
     const prevSlide = () => {
-        setCurrentIndex((prev) => (prev - 1 + images.length) % images.length);
+        setCurrentIndex(prev => getIndex(prev - 1));
     };
     
-    // Safety check for empty images or missing data
+    // Safety check for empty images
     if (!images || images.length === 0) return null;
 
     const currentImage = images[currentIndex];
-    
-    // Check if current image is missing/undefined and skip safely
+
+    // Safely handle missing image data
     if (!currentImage) {
-        // If the current image index somehow points to undefined, reset to 0
-        if (currentIndex !== 0) setCurrentIndex(0);
-        return null;
+        if (images.length > 1) {
+             // Try next one immediately if current is corrupted/empty
+             setTimeout(nextSlide, 0);
+             return null;
+        }
+        return (
+            <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
+                 <p className="text-white">Image not found.</p>
+                 <button onClick={onClose} className="absolute top-5 right-5 text-white p-4">&times;</button>
+            </div>
+        );
     }
 
     return (
         <div 
             className="fixed inset-0 z-50 bg-black flex items-center justify-center animate-fadeIn"
-            onTouchStart={onTouchStart}
-            onTouchMove={onTouchMove}
-            onTouchEnd={onTouchEnd}
+            style={{ touchAction: 'none' }} // Critical for gesture handling
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
         >
-            <div key={currentIndex} className="absolute inset-0 w-full h-full animate-fadeIn flex items-center justify-center">
+            <div className="absolute inset-0 w-full h-full flex items-center justify-center overflow-hidden">
                 <img 
+                    ref={imgRef}
                     src={currentImage} 
                     alt={`Preview ${currentIndex}`} 
-                    className="max-w-full max-h-full object-contain"
+                    className="max-w-full max-h-full object-contain origin-center will-change-transform"
+                    draggable={false}
                     onError={(e) => {
                         console.warn("Image failed to load in carousel");
                         (e.target as HTMLImageElement).style.display = 'none';
                     }}
                 />
             </div>
+            
+            {/* Controls Overlay - Only show if not heavily zoomed/panning to reduce clutter? Or always show. */}
             
             {/* Set Background Button - Top Left */}
             <button 
@@ -98,25 +308,18 @@ const ImageCarousel: React.FC<{ images: string[]; onClose: () => void; onSetBack
                 </svg>
             </button>
 
-            {/* Navigation Hints */}
+            {/* Position Indicator (Dots) */}
             {images.length > 1 && (
-                <>
-                    <button onClick={(e) => { e.stopPropagation(); prevSlide(); }} className="absolute left-2 top-1/2 -translate-y-1/2 p-2 text-white/50 hover:text-white z-10">
-                         <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                    </button>
-                    <button onClick={(e) => { e.stopPropagation(); nextSlide(); }} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-white/50 hover:text-white z-10">
-                         <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                    </button>
-                     <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-2 z-10">
-                        {images.map((_, idx) => (
-                            <div key={idx} className={`w-2 h-2 rounded-full transition-colors ${idx === currentIndex ? 'bg-white' : 'bg-white/30'}`} />
-                        ))}
-                    </div>
-                </>
+                 <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-2 z-10 pointer-events-none">
+                    {images.map((_, idx) => (
+                        <div key={idx} className={`w-2 h-2 rounded-full transition-colors duration-300 shadow-sm ${idx === currentIndex ? 'bg-white scale-125' : 'bg-white/30'}`} />
+                    ))}
+                </div>
             )}
 
+            {/* Close Button - Top Right */}
             <button 
-                onClick={onClose} 
+                onClick={(e) => { e.stopPropagation(); onClose(); }} 
                 className="absolute top-6 right-6 z-50 bg-black/40 text-white rounded-full w-12 h-12 flex items-center justify-center backdrop-blur-md hover:bg-black/60 transition-all shadow-lg"
             >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
