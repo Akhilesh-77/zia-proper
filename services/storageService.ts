@@ -1,3 +1,4 @@
+
 import { BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference, ChatSession } from '../types';
 
 // This service uses localForage to persist data via IndexedDB.
@@ -39,6 +40,10 @@ const KEYS: { [K in keyof UserData]: string } = {
 
 // Migrates data from the old single-key format to the new multi-key format.
 export const migrateData = async (): Promise<void> => {
+    if (typeof localforage === 'undefined') {
+        console.warn('LocalForage not loaded. Persistence disabled.');
+        return;
+    }
     try {
         const oldData = await localforage.getItem(OLD_STORAGE_KEY);
         if (oldData) {
@@ -68,6 +73,8 @@ let pendingData: Partial<UserData> = {};
 // Saves parts of the app's data under their respective keys.
 // Uses debouncing to batch multiple rapid updates (like typing or rapid nav) into fewer DB writes.
 export const saveUserData = async (data: Partial<UserData>): Promise<void> => {
+    if (typeof localforage === 'undefined') return;
+
     // Merge new data into pending queue
     pendingData = { ...pendingData, ...data };
 
@@ -99,6 +106,8 @@ export const saveUserData = async (data: Partial<UserData>): Promise<void> => {
 
 // Loads all data for the user from individual keys.
 export const loadUserData = async (): Promise<Partial<UserData>> => {
+    if (typeof localforage === 'undefined') return {};
+
     try {
         const keyNames = Object.keys(KEYS) as (keyof UserData)[];
         const promises = keyNames.map(keyName => localforage.getItem(KEYS[keyName]));
@@ -119,6 +128,7 @@ export const loadUserData = async (): Promise<Partial<UserData>> => {
 
 // Clears all data for the user.
 export const clearUserData = async (): Promise<void> => {
+    if (typeof localforage === 'undefined') return;
     try {
         await Promise.all(Object.values(KEYS).map(key => localforage.removeItem(key)));
     } catch (error) {

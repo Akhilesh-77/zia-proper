@@ -12,7 +12,8 @@ const getCroppedImg = (image: HTMLImageElement, crop: {x: number, y: number, wid
     const canvas = document.createElement('canvas');
     let outputWidth: number, outputHeight: number;
     
-    const maxDimension = 1024; // Cap output resolution for performance/storage
+    // Increased max dimension to preserve quality (was 1024)
+    const maxDimension = 4096; 
     const cropAspect = crop.width / crop.height;
     if (crop.width >= crop.height) {
         outputWidth = Math.min(crop.width, maxDimension);
@@ -55,8 +56,8 @@ const getCroppedImg = (image: HTMLImageElement, crop: {x: number, y: number, wid
         canvas.height
     );
 
-    // Return PNG to support transparency for the circular crop
-    return canvas.toDataURL('image/png');
+    // Return PNG to support transparency and lossless quality
+    return canvas.toDataURL('image/png', 1.0);
 };
 
 const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, onClose, aspect, outputShape = 'rectangle' }) => {

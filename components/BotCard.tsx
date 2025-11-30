@@ -73,7 +73,7 @@ const SwipeToChatButton: React.FC<{ botName: string; onSwiped: () => void; }> = 
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onMouseUp);
         };
-    }, [isDragging, onMouseMove, onMouseUp]);
+    }, [isDragging]); // Removed function dependencies to prevent loop
 
 
     return (
@@ -130,22 +130,32 @@ const BotCard: React.FC<BotCardProps> = ({ bot, onChat, onEdit, onDelete, onClon
     const [dynamicDesc, setDynamicDesc] = useState<string | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
 
-    const fetchDescription = async () => {
-        // Fallback to static description if personality is empty
-        if (!bot.personality.trim()) {
-            setDynamicDesc(bot.description);
-            return;
-        }
-        const desc = await generateDynamicDescription(bot.personality);
-        setDynamicDesc(desc);
-    };
-
     useEffect(() => {
+        let isMounted = true;
+        const fetchDescription = async () => {
+            if (!bot.personality.trim()) {
+                if (isMounted) setDynamicDesc(bot.description);
+                return;
+            }
+            try {
+                const desc = await generateDynamicDescription(bot.personality);
+                if (isMounted) setDynamicDesc(desc);
+            } catch (error) {
+                console.error("Failed to fetch description", error);
+                if (isMounted) setDynamicDesc(bot.description);
+            }
+        };
+
         fetchDescription();
         // Refresh description every 15 seconds
-        const interval = setInterval(fetchDescription, 15000);
-        return () => clearInterval(interval);
-    }, [bot.id, bot.personality]);
+        const interval = setInterval(() => {
+            if(isMounted) fetchDescription();
+        }, 15000);
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
+    }, [bot.id, bot.personality, bot.description]);
 
 
     useEffect(() => {

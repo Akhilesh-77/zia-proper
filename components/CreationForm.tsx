@@ -16,6 +16,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
   const [photo, setPhoto] = useState<string | null>(null);
   const [originalPhoto, setOriginalPhoto] = useState<string | null>(null);
   const [gif, setGif] = useState<string | null>(null);
+  const [gallery, setGallery] = useState<string[]>([]);
   const [scenario, setScenario] = useState('');
   const [chatBackground, setChatBackground] = useState<string | null>(null);
   const [imageToCrop, setImageToCrop] = useState<{ src: string, type: 'photo' | 'background' } | null>(null);
@@ -33,6 +34,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
       setPhoto(botToEdit.photo);
       setOriginalPhoto(botToEdit.originalPhoto || null);
       setGif(botToEdit.gif || null);
+      setGallery(botToEdit.gallery || []);
       setScenario(botToEdit.scenario);
       setChatBackground(botToEdit.chatBackground || null);
       setIsSpicy(botToEdit.isSpicy || false);
@@ -54,6 +56,27 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
     }
   };
 
+  const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files) {
+          const files = Array.from(e.target.files);
+          const maxFiles = 10;
+          const remainingSlots = maxFiles - gallery.length;
+          
+          files.slice(0, remainingSlots).forEach(file => {
+              const reader = new FileReader();
+              reader.onload = (event) => {
+                  const result = event.target?.result as string;
+                  setGallery(prev => [...prev, result]);
+              };
+              reader.readAsDataURL(file);
+          });
+      }
+  };
+
+  const handleRemoveGalleryImage = (index: number) => {
+      setGallery(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !description || !personality || !photo) {
@@ -68,6 +91,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
         photo, 
         originalPhoto,
         gif, 
+        gallery,
         scenario, 
         chatBackground, 
         personaId: botToEdit?.personaId, 
@@ -163,9 +187,9 @@ ${personality}`;
             <div>
               <label htmlFor="photo-upload" className={`${labelClass} mb-2`}>Human Photo *</label>
               <input id="photo-upload" type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'photo')} className="hidden" />
-              <label htmlFor="photo-upload" className="cursor-pointer block w-full h-32 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center">
+              <label htmlFor="photo-upload" className="cursor-pointer block w-full h-32 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center overflow-hidden">
                 {photo ? (
-                  <img src={photo} alt="Human preview" className="h-full w-full object-cover rounded-2xl" />
+                  <img src={photo} alt="Human preview" className="h-full w-full object-cover" />
                 ) : (
                   <span className="text-gray-400 text-center text-sm p-2">Tap to upload</span>
                 )}
@@ -174,21 +198,47 @@ ${personality}`;
             <div>
               <label htmlFor="gif-upload" className={`${labelClass} mb-2`}>Human GIF</label>
               <input id="gif-upload" type="file" accept="image/gif" onChange={(e) => handleFileUpload(e, 'gif')} className="hidden" />
-              <label htmlFor="gif-upload" className="cursor-pointer block w-full h-32 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center">
+              <label htmlFor="gif-upload" className="cursor-pointer block w-full h-32 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center overflow-hidden">
                 {gif ? (
-                  <img src={gif} alt="GIF preview" className="h-full w-full object-contain rounded-2xl" />
+                  <img src={gif} alt="GIF preview" className="h-full w-full object-contain" />
                 ) : (
                   <span className="text-gray-400 text-center text-sm p-2">Tap to upload</span>
                 )}
               </label>
             </div>
         </div>
+
+        {/* Gallery Section */}
+        <div>
+            <label htmlFor="gallery-upload" className={`${labelClass} mb-2`}>Additional Gallery Images</label>
+            <input id="gallery-upload" type="file" multiple accept="image/*" onChange={handleGalleryUpload} className="hidden" />
+            
+            <div className="grid grid-cols-4 gap-2 mb-2">
+                {gallery.map((img, index) => (
+                    <div key={index} className="relative aspect-square">
+                        <img src={img} alt={`Gallery ${index}`} className="w-full h-full object-cover rounded-xl" />
+                        <button 
+                            type="button" 
+                            onClick={() => handleRemoveGalleryImage(index)}
+                            className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
+                        >
+                            &times;
+                        </button>
+                    </div>
+                ))}
+                <label htmlFor="gallery-upload" className="cursor-pointer aspect-square bg-white/5 dark:bg-black/5 rounded-xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center">
+                    <span className="text-2xl text-gray-400">+</span>
+                </label>
+            </div>
+             <p className="text-xs text-gray-500">Add up to 10 extra images. They will appear in the chat view.</p>
+        </div>
+
         <div>
            <label htmlFor="background-upload" className={`${labelClass} mb-2`}>Chat Background (9:16)</label>
             <input id="background-upload" type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'background')} className="hidden" />
-            <label htmlFor="background-upload" className="cursor-pointer block w-full h-48 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center">
+            <label htmlFor="background-upload" className="cursor-pointer block w-full h-48 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center overflow-hidden">
                 {chatBackground ? (
-                    <img src={chatBackground} alt="Background preview" className="h-full w-full object-cover rounded-2xl" />
+                    <img src={chatBackground} alt="Background preview" className="h-full w-full object-cover" />
                 ) : (
                     <span className="text-gray-400 text-center text-sm p-2">Tap to upload background</span>
                 )}

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { User, BotProfile, ChatMessage, Persona, AIModelOption, VoicePreference } from '../types';
 import { generateBotResponse } from '../services/geminiService';
@@ -52,9 +53,12 @@ const ImageCarousel: React.FC<{ images: string[]; onClose: () => void }> = ({ im
         setCurrentIndex((prev) => (prev - 1 + images.length) % images.length);
     };
     
-    // Determine object-fit based on index: 0 is background (cover), 1 is profile (contain)
+    // Determine object-fit based on content
     const currentImage = images[currentIndex];
-    const isBackground = currentIndex === 0;
+    // We treat the first image as background if it matches the background from props, but here we just have a list.
+    // Simpler logic: render all as contain, except specifically flagged ones? 
+    // Given the gallery requirement, most should be 'contain' to see the full image.
+    // Let's stick to 'contain' for carousel to ensure quality visibility.
 
     return (
         <div 
@@ -67,7 +71,7 @@ const ImageCarousel: React.FC<{ images: string[]; onClose: () => void }> = ({ im
                 <img 
                     src={currentImage} 
                     alt={`Preview ${currentIndex}`} 
-                    className={`w-full h-full ${isBackground ? 'object-cover object-left' : 'object-contain object-center'}`}
+                    className="w-full h-full object-contain object-center"
                 />
             </div>
             
@@ -243,33 +247,34 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
   const userAvatar = bot.persona?.photo || currentUser.photoUrl; 
   const userAvatarAlt = bot.persona?.name || currentUser.name || 'User';
 
-  // Prepare images for carousel (Background first, then Original Photo or Crop)
+  // Prepare images for carousel
   const carouselImages = useMemo(() => {
       const images = [];
+      // Main background
       if (bot.chatBackground) images.push(bot.chatBackground);
       
-      // Use original uncropped photo if available, otherwise fallback to the cropped photo
+      // Main profile (Original uncropped if available)
       if (bot.originalPhoto) {
           images.push(bot.originalPhoto);
       } else if (bot.photo) {
           images.push(bot.photo);
       }
+      
+      // Additional Gallery images
+      if (bot.gallery && bot.gallery.length > 0) {
+          images.push(...bot.gallery);
+      }
+      
       return images;
-  }, [bot.chatBackground, bot.originalPhoto, bot.photo]);
+  }, [bot.chatBackground, bot.originalPhoto, bot.photo, bot.gallery]);
 
   // Preload images for smoother experience
   useEffect(() => {
-    if (bot.chatBackground) {
-        const bgImg = new Image();
-        bgImg.src = bot.chatBackground;
-    }
-    if (bot.originalPhoto) {
-        const origImg = new Image();
-        origImg.src = bot.originalPhoto;
-    }
-    const avatarImg = new Image();
-    avatarImg.src = botAvatar;
-  }, [bot.chatBackground, bot.originalPhoto, botAvatar]);
+    carouselImages.forEach(src => {
+        const img = new Image();
+        img.src = src;
+    });
+  }, [carouselImages]);
 
   useEffect(() => {
     // Log session start time on mount and log end time on unmount
@@ -549,19 +554,34 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
               }
             }}
             placeholder="Type your message..."
-            className={`w-full bg-white/10 dark:bg-black/20 p-4 pr-14 rounded-2xl border border-white/20 dark:border-black/20 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-300 shadow-inner resize-none ${bot.chatBackground ? 'pl-14' : ''}`}
+            className={`w-full bg-white/10 dark:bg-black/20 p-4 pr-24 rounded-2xl border border-white/20 dark:border-black/20 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-300 shadow-inner resize-none ${bot.chatBackground ? 'pl-14' : ''}`}
             rows={1}
           />
-          <button
-            type="submit"
-            className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-accent rounded-full text-white transition-transform hover:scale-110 disabled:opacity-50"
-            disabled={!input.trim() || isTyping}
-            aria-label="Send message"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 transform rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-          </button>
+          
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+             {/* Gallery Button */}
+             <button
+                 type="button"
+                 onClick={() => setShowCarousel(true)}
+                 className="p-2 text-gray-400 hover:text-accent transition-colors"
+                 aria-label="View gallery"
+             >
+                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                 </svg>
+             </button>
+
+              <button
+                type="submit"
+                className="p-2 bg-accent rounded-full text-white transition-transform hover:scale-110 disabled:opacity-50"
+                disabled={!input.trim() || isTyping}
+                aria-label="Send message"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 transform rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </button>
+          </div>
         </form>
       </footer>
     </div>

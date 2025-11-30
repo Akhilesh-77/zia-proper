@@ -488,6 +488,7 @@ const App: React.FC = () => {
         return <HomePage 
                     bots={bots} 
                     botUsage={botUsage}
+                    chatHistories={chatHistories}
                     onSelectBot={handleSelectBot} 
                     onEditBot={handleEditBot}
                     onDeleteBot={handleDeleteBot}

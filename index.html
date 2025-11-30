@@ -19,6 +19,11 @@
       }
     </script>
     <script>
+      // Polyfill process for browser environment to prevent Uncaught ReferenceError
+      if (typeof process === 'undefined') {
+        window.process = { env: {} };
+      }
+      
       // Apply theme from localStorage on initial load to prevent FOUC
       if (localStorage.theme === 'light' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: light)').matches)) {
         document.documentElement.classList.remove('dark')

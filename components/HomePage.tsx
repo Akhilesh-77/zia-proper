@@ -1,12 +1,13 @@
 
 import React from 'react';
-import type { BotProfile } from '../types';
+import type { BotProfile, ChatMessage } from '../types';
 import BotCard from './BotCard';
 import TrendingBotCard from './TrendingBotCard';
 
 interface HomePageProps {
   bots: BotProfile[];
   botUsage: Record<string, number>;
+  chatHistories: Record<string, ChatMessage[]>;
   onSelectBot: (id: string) => void;
   onEditBot: (id: string) => void;
   onDeleteBot: (id: string) => void;
@@ -16,11 +17,23 @@ interface HomePageProps {
   onOpenSettings: () => void;
 }
 
-const HomePage: React.FC<HomePageProps> = ({ bots, botUsage, onSelectBot, onEditBot, onDeleteBot, onCloneBot, theme, toggleTheme, onOpenSettings }) => {
+const HomePage: React.FC<HomePageProps> = ({ bots, botUsage, chatHistories, onSelectBot, onEditBot, onDeleteBot, onCloneBot, theme, toggleTheme, onOpenSettings }) => {
 
-  const sortedBots = [...bots].sort((a, b) => (botUsage[b.id] || 0) - (botUsage[a.id] || 0));
+  // Sort bots by the timestamp of the last message in their chat history (Most recent first)
+  // Fallback to botUsage count if timestamps are equal or missing, then creation time (id)
+  const sortedBots = [...bots].sort((a, b) => {
+    const lastMsgA = chatHistories[a.id]?.slice(-1)[0];
+    const lastMsgB = chatHistories[b.id]?.slice(-1)[0];
+    
+    const timeA = lastMsgA ? lastMsgA.timestamp : 0;
+    const timeB = lastMsgB ? lastMsgB.timestamp : 0;
+    
+    if (timeB !== timeA) return timeB - timeA;
+    
+    return (botUsage[b.id] || 0) - (botUsage[a.id] || 0);
+  });
 
-  // Display all sorted bots in the trending section, not just the top 8.
+  // Display all sorted bots in the trending section
   const trendingBots = sortedBots;
 
   const renderTrendingSection = (botList: BotProfile[]) => {
