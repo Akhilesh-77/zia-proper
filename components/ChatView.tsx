@@ -631,17 +631,29 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
   };
   
   const handleSaveSettings = (newBrightness: number) => {
-    onUpdateBot({ ...bot, chatBackgroundBrightness: newBrightness });
+    // Partial update to avoid overwriting or corruption
+    const updatePayload = {
+        id: bot.id,
+        chatBackgroundBrightness: newBrightness
+    };
+    onUpdateBot(updatePayload as BotProfile);
   };
   
   const handleSetBackground = useCallback((image: string) => {
     try {
-        const updatedBot = { ...bot, chatBackground: image, originalChatBackground: image };
-        onUpdateBot(updatedBot);
+        // Fix: Use partial update to prevent overwriting galleryImages or corrupting personality
+        // The main app's handleSaveBot merges this partial data with the existing bot state.
+        const updatePayload = {
+            id: bot.id,
+            chatBackground: image,
+            originalChatBackground: image
+        };
+        onUpdateBot(updatePayload as BotProfile);
+        setShowCarousel(false);
     } catch(e) {
         console.error("Set background failed", e);
     }
-  }, [bot, onUpdateBot]);
+  }, [bot.id, onUpdateBot]);
 
 
   return (
