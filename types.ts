@@ -1,3 +1,4 @@
+
 // FIX: Removed self-import of 'BotProfile' which was causing a conflict with its local declaration.
 
 export type AIModelOption = 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-flash-latest' | 'gemini-flash-lite-latest';
@@ -17,13 +18,15 @@ export interface BotProfile {
   personality: string;
   photo: string; // base64 data URL
   originalPhoto?: string | null; // base64 data URL (uncropped original)
-  gallery?: string[]; // Array of base64 data URLs for additional images
   gif?: string | null; // base64 data URL
   scenario: string;
   chatBackground?: string | null; // base64 data URL
+  originalChatBackground?: string | null; // base64 data URL (uncropped original)
   chatBackgroundBrightness?: number; // Brightness percentage (e.g., 100)
   personaId?: string | null;
   isSpicy?: boolean;
+  galleryImages?: string[]; // List of additional images (base64)
+  originalGalleryImages?: string[]; // List of original uncropped additional images (base64)
 }
 
 export interface ChatMessage {

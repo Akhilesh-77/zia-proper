@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import type { BotProfile } from '../types';
 import ImageCropper from './ImageCropper';
@@ -16,10 +17,15 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
   const [photo, setPhoto] = useState<string | null>(null);
   const [originalPhoto, setOriginalPhoto] = useState<string | null>(null);
   const [gif, setGif] = useState<string | null>(null);
-  const [gallery, setGallery] = useState<string[]>([]);
   const [scenario, setScenario] = useState('');
   const [chatBackground, setChatBackground] = useState<string | null>(null);
-  const [imageToCrop, setImageToCrop] = useState<{ src: string, type: 'photo' | 'background' } | null>(null);
+  const [originalChatBackground, setOriginalChatBackground] = useState<string | null>(null);
+  const [galleryImages, setGalleryImages] = useState<string[]>([]);
+  const [originalGalleryImages, setOriginalGalleryImages] = useState<string[]>([]);
+  
+  // Crop state
+  const [imageToCrop, setImageToCrop] = useState<{ src: string, type: 'photo' | 'background' | 'gallery', index?: number } | null>(null);
+  
   const [isSpicy, setIsSpicy] = useState(false);
   const [editingField, setEditingField] = useState<'scenario' | 'personality' | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
@@ -34,47 +40,70 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
       setPhoto(botToEdit.photo);
       setOriginalPhoto(botToEdit.originalPhoto || null);
       setGif(botToEdit.gif || null);
-      setGallery(botToEdit.gallery || []);
       setScenario(botToEdit.scenario);
       setChatBackground(botToEdit.chatBackground || null);
+      setOriginalChatBackground(botToEdit.originalChatBackground || null);
       setIsSpicy(botToEdit.isSpicy || false);
+      setGalleryImages(botToEdit.galleryImages || []);
+      setOriginalGalleryImages(botToEdit.originalGalleryImages || botToEdit.galleryImages || []);
     }
   }, [botToEdit, isEditing]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fileType: 'photo' | 'gif' | 'background') => {
-    if (e.target.files && e.target.files[0]) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const result = event.target?.result as string;
-         if (fileType === 'background' || fileType === 'photo') {
-            setImageToCrop({ src: result, type: fileType }); // Open cropper modal
-        } else {
-            setGif(result);
-        }
-      };
-      reader.readAsDataURL(e.target.files[0]);
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fileType: 'photo' | 'gif' | 'background' | 'gallery') => {
+    if (e.target.files) {
+      if (fileType === 'gallery') {
+         // Handle multiple images
+         const files = Array.from(e.target.files);
+         files.forEach(file => {
+             const reader = new FileReader();
+             reader.onload = (event) => {
+                 try {
+                     const result = event.target?.result as string;
+                     // Store exact original base64 without compression
+                     setGalleryImages(prev => [...prev, result]);
+                     setOriginalGalleryImages(prev => [...prev, result]);
+                 } catch (err) {
+                     console.error("Error reading file", err);
+                 }
+             };
+             reader.readAsDataURL(file);
+         });
+      } else if (e.target.files[0]) {
+        // Handle single image
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+              const result = event.target?.result as string;
+               if (fileType === 'background' || fileType === 'photo') {
+                  // Open cropper modal but also store original immediately
+                  setImageToCrop({ src: result, type: fileType }); 
+               } else {
+                  setGif(result);
+               }
+          } catch (err) {
+              console.error("Error reading file", err);
+          }
+        };
+        reader.readAsDataURL(e.target.files[0]);
+      }
     }
   };
 
-  const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files) {
-          const files = Array.from(e.target.files);
-          const maxFiles = 10;
-          const remainingSlots = maxFiles - gallery.length;
-          
-          files.slice(0, remainingSlots).forEach(file => {
-              const reader = new FileReader();
-              reader.onload = (event) => {
-                  const result = event.target?.result as string;
-                  setGallery(prev => [...prev, result]);
-              };
-              reader.readAsDataURL(file);
-          });
-      }
+  const removeGalleryImage = (index: number) => {
+      setGalleryImages(prev => prev.filter((_, i) => i !== index));
+      setOriginalGalleryImages(prev => prev.filter((_, i) => i !== index));
   };
-
-  const handleRemoveGalleryImage = (index: number) => {
-      setGallery(prev => prev.filter((_, i) => i !== index));
+  
+  const openGalleryCropper = (index: number) => {
+      try {
+          // Prefer the original image for cropping to maintain max quality
+          const img = originalGalleryImages[index] || galleryImages[index];
+          if (img) {
+              setImageToCrop({ src: img, type: 'gallery', index });
+          }
+      } catch (err) {
+          console.error("Error opening cropper", err);
+      }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -91,12 +120,14 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
         photo, 
         originalPhoto,
         gif, 
-        gallery,
         scenario, 
         chatBackground, 
+        originalChatBackground,
         personaId: botToEdit?.personaId, 
         isSpicy,
-        chatBackgroundBrightness: botToEdit?.chatBackgroundBrightness
+        chatBackgroundBrightness: botToEdit?.chatBackgroundBrightness,
+        galleryImages,
+        originalGalleryImages
     };
     
     if (isEditing) {
@@ -132,15 +163,26 @@ ${personality}`;
        {imageToCrop && (
             <ImageCropper 
                 imageSrc={imageToCrop.src}
-                aspect={imageToCrop.type === 'photo' ? undefined : 9 / 16}
+                aspect={imageToCrop.type === 'background' ? 9 / 16 : undefined}
                 outputShape={'rectangle'}
                 onClose={() => setImageToCrop(null)}
                 onCropComplete={(croppedImage) => {
                     if (imageToCrop.type === 'photo') {
                         setPhoto(croppedImage);
-                        setOriginalPhoto(imageToCrop.src); // Store original uncropped image
-                    } else {
+                        // Store the EXACT original base64
+                        setOriginalPhoto(imageToCrop.src); 
+                    } else if (imageToCrop.type === 'background') {
                         setChatBackground(croppedImage);
+                        // Store the EXACT original base64
+                        setOriginalChatBackground(imageToCrop.src);
+                    } else if (imageToCrop.type === 'gallery' && imageToCrop.index !== undefined) {
+                        // Update the specific gallery image with the high quality crop
+                        setGalleryImages(prev => {
+                            const newImages = [...prev];
+                            newImages[imageToCrop.index!] = croppedImage;
+                            return newImages;
+                        });
+                        // IMPORTANT: We do NOT update originalGalleryImages here, ensuring the uncropped original is preserved.
                     }
                     setImageToCrop(null);
                 }}
@@ -187,9 +229,9 @@ ${personality}`;
             <div>
               <label htmlFor="photo-upload" className={`${labelClass} mb-2`}>Human Photo *</label>
               <input id="photo-upload" type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'photo')} className="hidden" />
-              <label htmlFor="photo-upload" className="cursor-pointer block w-full h-32 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center overflow-hidden">
+              <label htmlFor="photo-upload" className="cursor-pointer block w-full h-32 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center relative overflow-hidden">
                 {photo ? (
-                  <img src={photo} alt="Human preview" className="h-full w-full object-cover" />
+                  <img src={photo} alt="Human preview" className="h-full w-full object-cover rounded-2xl" />
                 ) : (
                   <span className="text-gray-400 text-center text-sm p-2">Tap to upload</span>
                 )}
@@ -198,52 +240,59 @@ ${personality}`;
             <div>
               <label htmlFor="gif-upload" className={`${labelClass} mb-2`}>Human GIF</label>
               <input id="gif-upload" type="file" accept="image/gif" onChange={(e) => handleFileUpload(e, 'gif')} className="hidden" />
-              <label htmlFor="gif-upload" className="cursor-pointer block w-full h-32 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center overflow-hidden">
+              <label htmlFor="gif-upload" className="cursor-pointer block w-full h-32 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center relative overflow-hidden">
                 {gif ? (
-                  <img src={gif} alt="GIF preview" className="h-full w-full object-contain" />
+                  <img src={gif} alt="GIF preview" className="h-full w-full object-contain rounded-2xl" />
                 ) : (
                   <span className="text-gray-400 text-center text-sm p-2">Tap to upload</span>
                 )}
               </label>
             </div>
         </div>
-
-        {/* Gallery Section */}
-        <div>
-            <label htmlFor="gallery-upload" className={`${labelClass} mb-2`}>Additional Gallery Images</label>
-            <input id="gallery-upload" type="file" multiple accept="image/*" onChange={handleGalleryUpload} className="hidden" />
-            
-            <div className="grid grid-cols-4 gap-2 mb-2">
-                {gallery.map((img, index) => (
-                    <div key={index} className="relative aspect-square">
-                        <img src={img} alt={`Gallery ${index}`} className="w-full h-full object-cover rounded-xl" />
-                        <button 
-                            type="button" 
-                            onClick={() => handleRemoveGalleryImage(index)}
-                            className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
-                        >
-                            &times;
-                        </button>
-                    </div>
-                ))}
-                <label htmlFor="gallery-upload" className="cursor-pointer aspect-square bg-white/5 dark:bg-black/5 rounded-xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center">
-                    <span className="text-2xl text-gray-400">+</span>
-                </label>
-            </div>
-             <p className="text-xs text-gray-500">Add up to 10 extra images. They will appear in the chat view.</p>
-        </div>
-
         <div>
            <label htmlFor="background-upload" className={`${labelClass} mb-2`}>Chat Background (9:16)</label>
             <input id="background-upload" type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'background')} className="hidden" />
-            <label htmlFor="background-upload" className="cursor-pointer block w-full h-48 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center overflow-hidden">
+            <label htmlFor="background-upload" className="cursor-pointer block w-full h-48 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center relative overflow-hidden">
                 {chatBackground ? (
-                    <img src={chatBackground} alt="Background preview" className="h-full w-full object-cover" />
+                    <img src={chatBackground} alt="Background preview" className="h-full w-full object-cover rounded-2xl" />
                 ) : (
                     <span className="text-gray-400 text-center text-sm p-2">Tap to upload background</span>
                 )}
             </label>
         </div>
+
+        <div>
+            <label htmlFor="gallery-upload" className={`${labelClass} mb-2`}>Additional Images (Gallery)</label>
+            <input id="gallery-upload" type="file" accept="image/*" multiple onChange={(e) => handleFileUpload(e, 'gallery')} className="hidden" />
+            
+            <div className="flex flex-wrap gap-2">
+                <label htmlFor="gallery-upload" className="cursor-pointer w-24 h-24 bg-white/5 dark:bg-black/5 rounded-2xl border-2 border-dashed border-white/20 dark:border-black/20 flex items-center justify-center flex-shrink-0">
+                   <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                </label>
+                {galleryImages.map((img, idx) => (
+                    <div key={idx} className="w-24 h-24 relative group flex-shrink-0">
+                        <img 
+                            src={img} 
+                            alt={`Gallery ${idx}`} 
+                            className="w-full h-full object-cover rounded-2xl border border-white/10 cursor-pointer" 
+                            onClick={() => openGalleryCropper(idx)}
+                        />
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); removeGalleryImage(idx); }}
+                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                        </button>
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] text-center opacity-0 group-hover:opacity-100 transition-opacity rounded-b-2xl pointer-events-none">
+                            Tap to Crop
+                        </div>
+                    </div>
+                ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">Upload 3-10 images. Tap an image to crop/edit.</p>
+        </div>
+
         <div>
           <label htmlFor="name" className={`${labelClass} mb-2`}>Human Name *</label>
           <input id="name" type="text" value={name} onChange={e => setName(e.target.value)} className={inputClass} required />

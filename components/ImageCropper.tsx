@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 interface ImageCropperProps {
@@ -12,8 +13,8 @@ const getCroppedImg = (image: HTMLImageElement, crop: {x: number, y: number, wid
     const canvas = document.createElement('canvas');
     let outputWidth: number, outputHeight: number;
     
-    // Increased max dimension to preserve quality (was 1024)
-    const maxDimension = 4096; 
+    // Increased cap for high quality output
+    const maxDimension = 8192; 
     const cropAspect = crop.width / crop.height;
     if (crop.width >= crop.height) {
         outputWidth = Math.min(crop.width, maxDimension);
@@ -56,8 +57,8 @@ const getCroppedImg = (image: HTMLImageElement, crop: {x: number, y: number, wid
         canvas.height
     );
 
-    // Return PNG to support transparency and lossless quality
-    return canvas.toDataURL('image/png', 1.0);
+    // Return PNG to support transparency for the circular crop
+    return canvas.toDataURL('image/png');
 };
 
 const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, onClose, aspect, outputShape = 'rectangle' }) => {
@@ -212,9 +213,14 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
 
     const handleCropConfirm = () => {
         if (imgRef.current && crop.width > 0) {
-            // FIX: Cast outputShape to the expected literal type to resolve TS error.
-            const croppedImageUrl = getCroppedImg(imgRef.current, crop, outputShape as 'rectangle' | 'circle', brightness);
-            onCropComplete(croppedImageUrl);
+            try {
+                // FIX: Cast outputShape to the expected literal type to resolve TS error.
+                const croppedImageUrl = getCroppedImg(imgRef.current, crop, outputShape as 'rectangle' | 'circle', brightness);
+                onCropComplete(croppedImageUrl);
+            } catch (error) {
+                console.error("Cropping failed:", error);
+                // Fallback or alert if needed, but avoiding crash
+            }
         }
     };
 
@@ -238,6 +244,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({ imageSrc, onCropComplete, o
                         alt="Image to crop"
                         className="w-full h-auto object-contain select-none pointer-events-none"
                         style={{ filter: `brightness(${brightness})` }}
+                        onLoad={onImageLoad}
                     />
                     <div
                         className="absolute border-2 border-dashed border-white/80 cursor-move"

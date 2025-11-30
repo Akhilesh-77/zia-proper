@@ -13,7 +13,7 @@ const PhotoViewer: React.FC<{ src: string; onClose: () => void }> = ({ src, onCl
     </div>
 );
 
-const ImageCarousel: React.FC<{ images: string[]; onClose: () => void }> = ({ images, onClose }) => {
+const ImageCarousel: React.FC<{ images: string[]; onClose: () => void; onSetBackground: (img: string) => void }> = ({ images, onClose, onSetBackground }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
     const touchStartX = useRef<number | null>(null);
     const touchEndX = useRef<number | null>(null);
@@ -53,12 +53,17 @@ const ImageCarousel: React.FC<{ images: string[]; onClose: () => void }> = ({ im
         setCurrentIndex((prev) => (prev - 1 + images.length) % images.length);
     };
     
-    // Determine object-fit based on content
+    // Safety check for empty images or missing data
+    if (!images || images.length === 0) return null;
+
     const currentImage = images[currentIndex];
-    // We treat the first image as background if it matches the background from props, but here we just have a list.
-    // Simpler logic: render all as contain, except specifically flagged ones? 
-    // Given the gallery requirement, most should be 'contain' to see the full image.
-    // Let's stick to 'contain' for carousel to ensure quality visibility.
+    
+    // Check if current image is missing/undefined and skip safely
+    if (!currentImage) {
+        // If the current image index somehow points to undefined, reset to 0
+        if (currentIndex !== 0) setCurrentIndex(0);
+        return null;
+    }
 
     return (
         <div 
@@ -67,14 +72,32 @@ const ImageCarousel: React.FC<{ images: string[]; onClose: () => void }> = ({ im
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
         >
-            <div key={currentIndex} className="absolute inset-0 w-full h-full animate-fadeIn">
+            <div key={currentIndex} className="absolute inset-0 w-full h-full animate-fadeIn flex items-center justify-center">
                 <img 
                     src={currentImage} 
                     alt={`Preview ${currentIndex}`} 
-                    className="w-full h-full object-contain object-center"
+                    className="max-w-full max-h-full object-contain"
+                    onError={(e) => {
+                        console.warn("Image failed to load in carousel");
+                        (e.target as HTMLImageElement).style.display = 'none';
+                    }}
                 />
             </div>
             
+            {/* Set Background Button - Top Left */}
+            <button 
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (currentImage) onSetBackground(currentImage);
+                }} 
+                className="absolute top-6 left-6 z-50 bg-black/40 text-white rounded-full w-12 h-12 flex items-center justify-center backdrop-blur-md hover:bg-green-600/80 transition-all shadow-lg border border-white/10"
+                aria-label="Set as Background"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+            </button>
+
             {/* Navigation Hints */}
             {images.length > 1 && (
                 <>
@@ -176,7 +199,7 @@ const MessageItem = React.memo(({
         <div 
             className={`flex items-end gap-2 group ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} transition-opacity duration-300 ${deletingMessageId === msg.id ? 'opacity-0' : 'opacity-100'}`}
         >
-            {msg.sender === 'bot' && <img src={botAvatar} alt="Bot" className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => setPhotoToView(botAvatar)} />}
+            {msg.sender === 'bot' && <img src={botAvatar} alt="Bot" className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => setPhotoToView(botAvatar)} onError={(e) => (e.target as HTMLImageElement).style.display = 'none'} />}
             
             <div className={`flex items-center gap-2 ${msg.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                 <div className={`max-w-xs md:max-w-md lg:max-w-lg p-3 rounded-2xl ${msg.sender === 'user' ? 'bg-accent text-white rounded-br-none' : 'bg-white/10 dark:bg-black/20 rounded-bl-none'}`}>
@@ -207,7 +230,7 @@ const MessageItem = React.memo(({
                 )}
             </div>
 
-            {msg.sender === 'user' && <img src={userAvatar} alt={userAvatarAlt} className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => setPhotoToView(userAvatar)} />}
+            {msg.sender === 'user' && <img src={userAvatar} alt={userAvatarAlt} className="h-10 w-10 rounded-lg object-cover self-start cursor-pointer" onClick={() => setPhotoToView(userAvatar)} onError={(e) => (e.target as HTMLImageElement).style.display = 'none'} />}
         </div>
     );
 });
@@ -248,33 +271,48 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
   const userAvatarAlt = bot.persona?.name || currentUser.name || 'User';
 
   // Prepare images for carousel
+  // Combines: Background (if any) + Profile (original or cropped) + Gallery Images
   const carouselImages = useMemo(() => {
-      const images = [];
-      // Main background
-      if (bot.chatBackground) images.push(bot.chatBackground);
-      
-      // Main profile (Original uncropped if available)
-      if (bot.originalPhoto) {
-          images.push(bot.originalPhoto);
-      } else if (bot.photo) {
-          images.push(bot.photo);
+      const images: string[] = [];
+      try {
+        if (bot.chatBackground) images.push(bot.chatBackground);
+        
+        // Use original uncropped photo if available, otherwise fallback to the cropped photo
+        if (bot.originalPhoto) {
+            images.push(bot.originalPhoto);
+        } else if (bot.photo) {
+            images.push(bot.photo);
+        }
+        
+        // Add additional gallery images
+        if (bot.galleryImages && Array.isArray(bot.galleryImages)) {
+            images.push(...bot.galleryImages);
+        }
+      } catch (e) {
+          console.error("Error constructing carousel images", e);
       }
-      
-      // Additional Gallery images
-      if (bot.gallery && bot.gallery.length > 0) {
-          images.push(...bot.gallery);
-      }
-      
       return images;
-  }, [bot.chatBackground, bot.originalPhoto, bot.photo, bot.gallery]);
+  }, [bot.chatBackground, bot.originalPhoto, bot.photo, bot.galleryImages]);
+
+  const hasGalleryImages = carouselImages.length > 0;
 
   // Preload images for smoother experience
   useEffect(() => {
-    carouselImages.forEach(src => {
-        const img = new Image();
-        img.src = src;
-    });
-  }, [carouselImages]);
+    try {
+        if (bot.chatBackground) {
+            const bgImg = new Image();
+            bgImg.src = bot.chatBackground;
+        }
+        if (bot.originalPhoto) {
+            const origImg = new Image();
+            origImg.src = bot.originalPhoto;
+        }
+        const avatarImg = new Image();
+        avatarImg.src = botAvatar;
+    } catch(e) {
+        // Ignore preload errors
+    }
+  }, [bot.chatBackground, bot.originalPhoto, botAvatar]);
 
   useEffect(() => {
     // Log session start time on mount and log end time on unmount
@@ -445,13 +483,26 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
   const handleSaveSettings = (newBrightness: number) => {
     onUpdateBot({ ...bot, chatBackgroundBrightness: newBrightness });
   };
+  
+  const handleSetBackground = useCallback((image: string) => {
+    try {
+        const updatedBot = { ...bot, chatBackground: image, originalChatBackground: image };
+        onUpdateBot(updatedBot);
+    } catch(e) {
+        console.error("Set background failed", e);
+    }
+  }, [bot, onUpdateBot]);
 
 
   return (
     <div className="h-full w-full flex flex-col bg-light-bg text-light-text dark:bg-dark-bg dark:text-dark-text relative">
         {photoToView && <PhotoViewer src={photoToView} onClose={() => setPhotoToView(null)} />}
         {showCarousel && (
-            <ImageCarousel images={carouselImages} onClose={() => setShowCarousel(false)} />
+            <ImageCarousel 
+                images={carouselImages} 
+                onClose={() => setShowCarousel(false)} 
+                onSetBackground={handleSetBackground}
+            />
         )}
         {isSettingsOpen && (
             <ChatSettingsModal 
@@ -476,7 +527,7 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
         <button onClick={onBack} className="p-2 rounded-full hover:bg-white/10 dark:hover:bg-black/20">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
         </button>
-        <img src={botAvatar} alt={bot.name} className="h-10 w-10 rounded-lg object-cover ml-4 cursor-pointer" onClick={() => setPhotoToView(botAvatar)} />
+        <img src={botAvatar} alt={bot.name} className="h-10 w-10 rounded-lg object-cover ml-4 cursor-pointer" onClick={() => setPhotoToView(botAvatar)} onError={(e) => (e.target as HTMLImageElement).src = 'https://via.placeholder.com/40'} />
         <div className="ml-3 flex-1">
           <h2 className="font-bold">{bot.name}</h2>
         </div>
@@ -517,7 +568,7 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
 
         {isTyping && (
           <div className="flex items-end gap-2 justify-start">
-            <img src={botAvatar} alt={bot.name} className="h-10 w-10 rounded-lg object-cover" />
+            <img src={botAvatar} alt={bot.name} className="h-10 w-10 rounded-lg object-cover" onError={(e) => (e.target as HTMLImageElement).src = 'https://via.placeholder.com/40'} />
             <div className="max-w-xs p-3 rounded-2xl bg-white/10 dark:bg-black/20 rounded-bl-none">
                 <div className="flex items-center justify-center space-x-1">
                     <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
@@ -531,56 +582,48 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
       </main>
 
       <footer className="sticky bottom-0 p-4 bg-light-bg/80 dark:bg-dark-bg/80 backdrop-blur-sm z-20">
-        <form onSubmit={(e) => { e.preventDefault(); handleSend(input); }} className="relative">
-          {bot.chatBackground && (
-            <button 
-                type="button"
-                onClick={() => setShowCarousel(true)}
-                className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full text-gray-400 hover:text-accent transition-colors z-10"
-                aria-label="View background"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-            </button>
-          )}
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend(input);
-              }
-            }}
-            placeholder="Type your message..."
-            className={`w-full bg-white/10 dark:bg-black/20 p-4 pr-24 rounded-2xl border border-white/20 dark:border-black/20 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-300 shadow-inner resize-none ${bot.chatBackground ? 'pl-14' : ''}`}
-            rows={1}
-          />
+        <form onSubmit={(e) => { e.preventDefault(); handleSend(input); }} className="relative flex items-center gap-2">
           
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
-             {/* Gallery Button */}
-             <button
-                 type="button"
-                 onClick={() => setShowCarousel(true)}
-                 className="p-2 text-gray-400 hover:text-accent transition-colors"
-                 aria-label="View gallery"
-             >
-                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                 </svg>
-             </button>
+          <div className="relative flex-1">
+            <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend(input);
+                }
+                }}
+                placeholder="Type your message..."
+                className={`w-full bg-white/10 dark:bg-black/20 p-4 pr-12 rounded-2xl border border-white/20 dark:border-black/20 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-300 shadow-inner resize-none ${hasGalleryImages ? 'pl-14' : 'pl-4'}`}
+                rows={1}
+            />
+            
+            {/* Gallery Button - LEFT Side */}
+            {hasGalleryImages && (
+                <button
+                    type="button"
+                    onClick={() => setShowCarousel(true)}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 p-2 text-gray-400 hover:text-accent transition-colors z-10"
+                    aria-label="Open Gallery"
+                >
+                   <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                   </svg>
+                </button>
+            )}
 
-              <button
+             {/* Send Button */}
+             <button
                 type="submit"
-                className="p-2 bg-accent rounded-full text-white transition-transform hover:scale-110 disabled:opacity-50"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-accent rounded-full text-white transition-transform hover:scale-110 disabled:opacity-50 z-10"
                 disabled={!input.trim() || isTyping}
                 aria-label="Send message"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 transform rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                 </svg>
-              </button>
+            </button>
           </div>
         </form>
       </footer>
