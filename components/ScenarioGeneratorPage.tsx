@@ -12,6 +12,40 @@ interface StoryModePageProps {
   onDeleteBlock: (id: string) => void;
 }
 
+// Internal Collapsible Section Component
+const CollapsibleSection: React.FC<{
+    title: string;
+    children: React.ReactNode;
+    defaultExpanded?: boolean;
+}> = ({ title, children, defaultExpanded = false }) => {
+    const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
+    return (
+        <div className="bg-white/5 dark:bg-black/10 rounded-2xl overflow-hidden mb-4 transition-all duration-300 border border-white/5 shadow-sm">
+            <button 
+                type="button"
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="w-full p-4 flex justify-between items-center bg-white/5 hover:bg-white/10 transition-colors"
+                aria-expanded={isExpanded}
+            >
+                <span className="font-bold text-base text-left">{title}</span>
+                <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    className={`h-5 w-5 text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} 
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+            </button>
+            {isExpanded && (
+                <div className="p-4 border-t border-white/10 animate-fadeIn">
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+};
+
 const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customBlocks, onSaveBlock, onDeleteBlock }) => {
     const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
     const [otherCharacters, setOtherCharacters] = useState('');
@@ -46,6 +80,8 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customB
             
             const idea = await generateScenarioIdea(personalities);
             setScenario(idea);
+            // Optional: You could notify the user that the scenario field has been updated
+            // but for now we just update the state.
         } catch (error) {
             console.error(error);
             setScenario('Failed to get an idea. Please try again.');
@@ -124,70 +160,90 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customB
                 <img src="https://i.postimg.cc/qRB2Gnw2/Gemini-Generated-Image-vfkohrvfkohrvfko-1.png" alt="Zia.ai Logo" className="h-8 w-8"/>
                 <h1 className="text-3xl font-bold">Story Mode ✨</h1>
             </header>
-            <main className="flex-1 overflow-y-auto pb-24 space-y-6">
-                <div>
-                    <label className={labelClass}>1. Choose Characters</label>
-                    <div className="max-h-32 overflow-y-auto space-y-2 p-2 bg-black/10 rounded-lg border border-white/20">
-                        {bots.map(bot => (
-                            <label key={bot.id} className="flex items-center bg-white/5 p-2 rounded-lg cursor-pointer hover:bg-white/10">
-                                <input
-                                    type="checkbox"
-                                    className="h-5 w-5 rounded bg-gray-700 border-gray-600 text-accent focus:ring-accent"
-                                    checked={selectedBotIds.has(bot.id)}
-                                    onChange={() => handleToggleBot(bot.id)}
-                                />
-                                <img src={bot.photo} alt={bot.name} className="h-8 w-8 rounded-md object-cover ml-3" />
-                                <span className="ml-3 font-medium">{bot.name}</span>
-                            </label>
-                        ))}
+            <main className="flex-1 overflow-y-auto pb-24 space-y-2">
+                
+                {/* 1. Choose Characters Section */}
+                <CollapsibleSection title="1. Choose Characters" defaultExpanded={false}>
+                    <div className="space-y-4">
+                        <div className="max-h-48 overflow-y-auto space-y-2 p-2 bg-black/10 rounded-lg border border-white/20 custom-scrollbar">
+                            {bots.length > 0 ? bots.map(bot => (
+                                <label key={bot.id} className="flex items-center bg-white/5 p-2 rounded-lg cursor-pointer hover:bg-white/10 transition-colors">
+                                    <input
+                                        type="checkbox"
+                                        className="h-5 w-5 rounded bg-gray-700 border-gray-600 text-accent focus:ring-accent"
+                                        checked={selectedBotIds.has(bot.id)}
+                                        onChange={() => handleToggleBot(bot.id)}
+                                    />
+                                    <img src={bot.photo} alt={bot.name} className="h-8 w-8 rounded-md object-cover ml-3" onError={(e) => (e.target as HTMLImageElement).src = 'https://via.placeholder.com/32'} />
+                                    <span className="ml-3 font-medium">{bot.name}</span>
+                                </label>
+                            )) : (
+                                <p className="text-gray-500 text-sm text-center py-2">No humans available. Create one first!</p>
+                            )}
+                        </div>
+                         <div>
+                            <label className="text-xs text-gray-400 mb-1 block">Add other characters (comma separated)</label>
+                            <input
+                                type="text"
+                                value={otherCharacters}
+                                onChange={(e) => setOtherCharacters(e.target.value)}
+                                className={inputClass}
+                                placeholder="e.g. The King, A mysterious stranger..."
+                            />
+                        </div>
                     </div>
-                     <input
-                        type="text"
-                        value={otherCharacters}
-                        onChange={(e) => setOtherCharacters(e.target.value)}
-                        className={`${inputClass} mt-2`}
-                        placeholder="Add other character names, separated by commas..."
-                    />
-                </div>
-                <div>
-                    <div className="flex justify-between items-center mb-2">
-                        <label htmlFor="scenario-input" className={labelClass}>2. Describe the Scenario</label>
-                        <button 
-                            onClick={handleSuggestIdea} 
-                            disabled={isSuggesting || isLoading}
-                            className="text-sm bg-accent/20 text-accent font-semibold py-1 px-3 rounded-full hover:bg-accent/40 transition-colors disabled:opacity-50"
-                        >
-                            {isSuggesting ? 'Thinking...' : 'Suggest Idea ✨'}
-                        </button>
-                    </div>
-                    <textarea
+                </CollapsibleSection>
+
+                {/* 2. Describe Scenario Section */}
+                <CollapsibleSection title="2. Describe the Scenario" defaultExpanded={false}>
+                     <textarea
                         id="scenario-input"
                         value={scenario}
                         onChange={(e) => setScenario(e.target.value)}
                         className={inputClass}
-                        rows={4}
+                        rows={5}
                         placeholder="e.g., A tense negotiation, a discovery in a magical forest..."
                     />
-                </div>
-                <button onClick={handleGenerate} disabled={isLoading || isSuggesting} className="w-full bg-accent text-white font-bold py-4 px-4 rounded-2xl text-lg transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-accent/50 shadow-lg hover:shadow-accent/20 disabled:opacity-50 disabled:cursor-not-allowed">
-                    {isLoading ? 'Generating...' : 'Generate Story'}
-                </button>
-                
-                {isLoading && (
-                    <div className="text-center p-4 animate-fadeIn">
-                        <div className="flex justify-center items-center space-x-2">
-                             <div className="w-3 h-3 bg-accent rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                             <div className="w-3 h-3 bg-accent rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                             <div className="w-3 h-3 bg-accent rounded-full animate-bounce"></div>
-                        </div>
-                        <p className="mt-3 text-gray-400">The AI is crafting your story...</p>
-                    </div>
-                )}
+                </CollapsibleSection>
 
+                 {/* Suggest Idea Section */}
+                <CollapsibleSection title="Suggest Idea ✨" defaultExpanded={false}>
+                     <p className="text-sm text-gray-400 mb-3">AI will generate a scenario idea based on selected character personalities.</p>
+                     <button 
+                        onClick={handleSuggestIdea} 
+                        disabled={isSuggesting || isLoading}
+                        className="w-full bg-accent/20 text-accent font-bold py-3 px-4 rounded-xl hover:bg-accent/30 transition-colors disabled:opacity-50"
+                    >
+                        {isSuggesting ? 'Thinking...' : 'Get Suggestion'}
+                    </button>
+                </CollapsibleSection>
+
+                {/* Generate Story Section */}
+                <CollapsibleSection title="Generate Story" defaultExpanded={false}>
+                     <button 
+                        onClick={handleGenerate} 
+                        disabled={isLoading || isSuggesting} 
+                        className="w-full bg-accent text-white font-bold py-4 px-4 rounded-2xl text-lg transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-accent/50 shadow-lg hover:shadow-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isLoading ? 'Generating...' : 'Generate Story'}
+                    </button>
+                    {isLoading && (
+                        <div className="text-center p-4 animate-fadeIn">
+                            <div className="flex justify-center items-center space-x-2">
+                                <div className="w-3 h-3 bg-accent rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                                <div className="w-3 h-3 bg-accent rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                <div className="w-3 h-3 bg-accent rounded-full animate-bounce"></div>
+                            </div>
+                            <p className="mt-3 text-gray-400">The AI is crafting your story...</p>
+                        </div>
+                    )}
+                </CollapsibleSection>
+
+                {/* Generated Result (Always Visible if exists) */}
                 {generatedStory && (
-                    <div className="animate-fadeIn space-y-4">
+                    <div className="animate-fadeIn space-y-4 mt-6 border-t border-white/10 pt-6">
                         <h2 className="text-xl font-semibold">Generated Story</h2>
-                        <div className="bg-white/5 dark:bg-black/10 p-4 rounded-2xl whitespace-pre-wrap">
+                        <div className="bg-white/5 dark:bg-black/10 p-4 rounded-2xl whitespace-pre-wrap border border-white/5 shadow-inner">
                             <p>{generatedStory}</p>
                         </div>
                         <button onClick={handleCopy} className="w-full bg-gray-600 text-white font-bold py-3 px-4 rounded-2xl text-lg transition-colors hover:bg-gray-500">
@@ -200,7 +256,7 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customB
                 <div className="pt-8 mt-4 border-t border-white/10">
                     <div className="flex justify-between items-center mb-4">
                         <h2 className="text-xl font-bold">Custom Copy Blocks</h2>
-                        <button onClick={() => setIsAddingBlock(!isAddingBlock)} className="p-2 bg-white/10 rounded-full hover:bg-white/20 text-accent">
+                        <button onClick={() => setIsAddingBlock(!isAddingBlock)} className="p-2 bg-white/10 rounded-full hover:bg-white/20 text-accent transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                         </button>
                     </div>
@@ -222,8 +278,8 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customB
                                 rows={3}
                             />
                             <div className="flex gap-2">
-                                <button onClick={() => setIsAddingBlock(false)} className="flex-1 py-2 bg-gray-600 rounded-lg text-white">Cancel</button>
-                                <button onClick={handleSaveNewBlock} className="flex-1 py-2 bg-accent rounded-lg text-white font-bold">Save Block</button>
+                                <button onClick={() => setIsAddingBlock(false)} className="flex-1 py-2 bg-gray-600 rounded-lg text-white hover:bg-gray-500 transition-colors">Cancel</button>
+                                <button onClick={handleSaveNewBlock} className="flex-1 py-2 bg-accent rounded-lg text-white font-bold hover:bg-accent/80 transition-colors">Save Block</button>
                             </div>
                         </div>
                     )}
@@ -231,7 +287,7 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customB
                     <div className="space-y-3">
                         {customBlocks && customBlocks.length > 0 ? (
                             customBlocks.map(block => (
-                                <div key={block.id} className="bg-white/5 p-3 rounded-xl flex flex-col gap-2 group">
+                                <div key={block.id} className="bg-white/5 p-3 rounded-xl flex flex-col gap-2 group border border-white/5 hover:bg-white/10 transition-colors">
                                     <div className="flex justify-between items-start">
                                         <h3 className="font-bold text-base">{block.name}</h3>
                                         <div className="flex gap-2">
@@ -255,7 +311,7 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customB
                                             </button>
                                         </div>
                                     </div>
-                                    <div className="bg-black/20 p-2 rounded-lg text-sm text-gray-400 max-h-24 overflow-y-auto whitespace-pre-wrap border border-white/5">
+                                    <div className="bg-black/20 p-2 rounded-lg text-sm text-gray-400 max-h-24 overflow-y-auto whitespace-pre-wrap border border-white/5 custom-scrollbar">
                                         {block.description}
                                     </div>
                                 </div>

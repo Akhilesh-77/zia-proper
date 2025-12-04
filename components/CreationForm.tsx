@@ -1,8 +1,11 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { BotProfile, ConversationMode, BotGender } from '../types';
 import ImageCropper from './ImageCropper';
 import FullScreenEditor from './FullScreenEditor';
+
+// Declare localforage for TypeScript since it's loaded via script tag
+declare const localforage: any;
 
 interface CreationPageProps {
   onSaveBot: (profile: Omit<BotProfile, 'id'> | BotProfile) => void;
@@ -30,16 +33,72 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
   const [conversationMode, setConversationMode] = useState<ConversationMode>('normal');
   const [gender, setGender] = useState<BotGender>('female');
 
+  // UI States
   const [editingField, setEditingField] = useState<'scenario' | 'personality' | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [isModeSectionExpanded, setIsModeSectionExpanded] = useState(false);
 
   const isEditing = !!botToEdit;
+
+  // --- AUTO-SAVE LOGIC ---
+  const getDraftKey = useCallback(() => {
+    return isEditing && botToEdit ? `draft_personality_${botToEdit.id}` : 'draft_personality_new';
+  }, [isEditing, botToEdit]);
+
+  // Load Draft on Mount
+  useEffect(() => {
+    const loadDraft = async () => {
+      try {
+        const key = getDraftKey();
+        const savedDraft = await localforage.getItem(key);
+        if (savedDraft && typeof savedDraft === 'string' && savedDraft.trim() !== '') {
+          // Only use draft if personality is currently empty or strictly equals the initial load
+          // This prevents overwriting if we navigated away and back quickly
+          setPersonality((prev) => {
+             // If we are editing and the prev value matches the bot's saved value, 
+             // but we have a different draft, assume the draft is newer work.
+             if (isEditing && botToEdit && prev === botToEdit.personality && savedDraft !== prev) {
+                 return savedDraft;
+             }
+             // If new bot and empty, use draft
+             if (!isEditing && !prev) {
+                 return savedDraft;
+             }
+             return prev;
+          });
+        }
+      } catch (e) {
+        console.error("Failed to load draft personality", e);
+      }
+    };
+    loadDraft();
+  }, [getDraftKey, isEditing, botToEdit]);
+
+  // Save Draft on Change (Debounced)
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      try {
+        const key = getDraftKey();
+        if (personality) {
+           await localforage.setItem(key, personality);
+        }
+      } catch (e) {
+        console.error("Failed to save draft personality", e);
+      }
+    }, 1000); // Save after 1 second of no typing
+
+    return () => clearTimeout(timer);
+  }, [personality, getDraftKey]);
+
 
   useEffect(() => {
     if (isEditing) {
       setName(botToEdit.name);
       setDescription(botToEdit.description);
-      setPersonality(botToEdit.personality);
+      // Logic inside loadDraft handles personality, but we set initial state here too just in case
+      // If loadDraft runs after, it will check conditions.
+      setPersonality(prev => prev || botToEdit.personality);
+      
       setPhoto(botToEdit.photo);
       setOriginalPhoto(botToEdit.originalPhoto || null);
       setGif(botToEdit.gif || null);
@@ -122,7 +181,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
       }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !description || !personality || !photo) {
       alert('Please fill all required fields and upload a photo.');
@@ -153,6 +212,15 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
     } else {
         onSaveBot(botData);
     }
+
+    // Clear draft on successful save
+    try {
+        const key = getDraftKey();
+        await localforage.removeItem(key);
+    } catch(err) {
+        console.warn("Failed to clear draft", err);
+    }
+
     onNavigate('humans');
   };
 
@@ -311,74 +379,97 @@ ${personality}`;
             <p className="text-xs text-gray-500 mt-2">Upload 3-10 images. Tap an image to crop/edit.</p>
         </div>
         
-        {/* NEW SECTIONS */}
-        <div className="bg-white/5 dark:bg-black/10 p-4 rounded-2xl">
-            <label className={`${labelClass} mb-3`}>Bot Gender / Identity</label>
-            <div className="flex flex-wrap gap-2">
-                 <button
-                    type="button"
-                    onClick={() => setGender('female')}
-                    className={`flex-1 py-3 px-2 rounded-xl text-sm font-medium transition-all ${gender === 'female' ? 'bg-accent text-white shadow-lg' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
-                 >
-                    Female 👩
-                 </button>
-                 <button
-                    type="button"
-                    onClick={() => setGender('male')}
-                    className={`flex-1 py-3 px-2 rounded-xl text-sm font-medium transition-all ${gender === 'male' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
-                 >
-                    Men Mode 👨
-                 </button>
-                 <button
-                    type="button"
-                    onClick={() => setGender('fluid')}
-                    className={`flex-1 py-3 px-2 rounded-xl text-sm font-medium transition-all ${gender === 'fluid' ? 'bg-purple-600 text-white shadow-lg' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
-                 >
-                    Fluid/Other ✨
-                 </button>
-            </div>
-             <p className="text-xs text-gray-500 mt-2 pl-1">Men Mode enforces strict Male POV rules.</p>
-        </div>
-
-        <div className="bg-white/5 dark:bg-black/10 p-4 rounded-2xl">
-            <label className={`${labelClass} mb-3`}>Conversation Mode</label>
-            <div className="space-y-2">
-                 <button
-                    type="button"
-                    onClick={() => setConversationMode('normal')}
-                    className={`w-full py-3 px-4 rounded-xl text-left flex items-center justify-between transition-all ${conversationMode === 'normal' ? 'bg-green-600/20 border border-green-500 text-green-400' : 'bg-white/5 border border-transparent hover:bg-white/10'}`}
-                 >
+        {/* COLLAPSIBLE MODE SECTION */}
+        <div className="bg-white/5 dark:bg-black/10 rounded-2xl overflow-hidden transition-all duration-300">
+             <button 
+                type="button" 
+                onClick={() => setIsModeSectionExpanded(!isModeSectionExpanded)} 
+                className="w-full p-4 flex justify-between items-center bg-white/5 dark:bg-black/5 hover:bg-white/10 transition-colors"
+            >
+                 <span className={`${labelClass} mb-0`}>Conversation Mode & Identity</span>
+                 <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    className={`h-5 w-5 text-gray-400 transition-transform duration-300 ${isModeSectionExpanded ? 'rotate-180' : ''}`} 
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                 </svg>
+             </button>
+             
+             {isModeSectionExpanded && (
+                <div className="p-4 space-y-4 border-t border-white/10 dark:border-black/20 animate-fadeIn">
+                     {/* GENDER */}
                     <div>
-                        <span className="font-bold block text-sm">Normal Mode</span>
-                        <span className="text-xs opacity-70">Strict personality, no added intimacy.</span>
+                        <label className={`${labelClass} mb-2`}>Bot Gender / Identity</label>
+                        <div className="flex flex-wrap gap-2">
+                             <button
+                                type="button"
+                                onClick={() => setGender('female')}
+                                className={`flex-1 py-3 px-2 rounded-xl text-sm font-medium transition-all ${gender === 'female' ? 'bg-accent text-white shadow-lg' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
+                             >
+                                Female 👩
+                             </button>
+                             <button
+                                type="button"
+                                onClick={() => setGender('male')}
+                                className={`flex-1 py-3 px-2 rounded-xl text-sm font-medium transition-all ${gender === 'male' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
+                             >
+                                Men Mode 👨
+                             </button>
+                             <button
+                                type="button"
+                                onClick={() => setGender('fluid')}
+                                className={`flex-1 py-3 px-2 rounded-xl text-sm font-medium transition-all ${gender === 'fluid' ? 'bg-purple-600 text-white shadow-lg' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
+                             >
+                                Fluid/Other ✨
+                             </button>
+                        </div>
+                         <p className="text-xs text-gray-500 mt-2 pl-1">Men Mode enforces strict Male POV rules.</p>
                     </div>
-                    {conversationMode === 'normal' && <span className="text-green-500 text-xl">✓</span>}
-                 </button>
 
-                 <button
-                    type="button"
-                    onClick={() => setConversationMode('spicy')}
-                    className={`w-full py-3 px-4 rounded-xl text-left flex items-center justify-between transition-all ${conversationMode === 'spicy' ? 'bg-accent/20 border border-accent text-accent' : 'bg-white/5 border border-transparent hover:bg-white/10'}`}
-                 >
+                    {/* CONVERSATION MODE */}
                     <div>
-                        <span className="font-bold block text-sm">Spicy Mode 🌶️</span>
-                        <span className="text-xs opacity-70">Light desire, playful teasing, soft tension.</span>
-                    </div>
-                     {conversationMode === 'spicy' && <span className="text-accent text-xl">✓</span>}
-                 </button>
+                        <label className={`${labelClass} mb-2`}>Conversation Mode</label>
+                        <div className="space-y-2">
+                             <button
+                                type="button"
+                                onClick={() => setConversationMode('normal')}
+                                className={`w-full py-3 px-4 rounded-xl text-left flex items-center justify-between transition-all ${conversationMode === 'normal' ? 'bg-green-600/20 border border-green-500 text-green-400' : 'bg-white/5 border border-transparent hover:bg-white/10'}`}
+                             >
+                                <div>
+                                    <span className="font-bold block text-sm">Normal Mode</span>
+                                    <span className="text-xs opacity-70">Strict personality, no added intimacy.</span>
+                                </div>
+                                {conversationMode === 'normal' && <span className="text-green-500 text-xl">✓</span>}
+                             </button>
 
-                 <button
-                    type="button"
-                    onClick={() => setConversationMode('extreme')}
-                    className={`w-full py-3 px-4 rounded-xl text-left flex items-center justify-between transition-all ${conversationMode === 'extreme' ? 'bg-red-600/20 border border-red-500 text-red-400' : 'bg-white/5 border border-transparent hover:bg-white/10'}`}
-                 >
-                    <div>
-                        <span className="font-bold block text-sm">Extreme Mode 🔥</span>
-                        <span className="text-xs opacity-70">Unrestricted desire, raw output, stronger vocabulary.</span>
+                             <button
+                                type="button"
+                                onClick={() => setConversationMode('spicy')}
+                                className={`w-full py-3 px-4 rounded-xl text-left flex items-center justify-between transition-all ${conversationMode === 'spicy' ? 'bg-accent/20 border border-accent text-accent' : 'bg-white/5 border border-transparent hover:bg-white/10'}`}
+                             >
+                                <div>
+                                    <span className="font-bold block text-sm">Spicy Mode 🌶️</span>
+                                    <span className="text-xs opacity-70">Light desire, playful teasing, soft tension.</span>
+                                </div>
+                                 {conversationMode === 'spicy' && <span className="text-accent text-xl">✓</span>}
+                             </button>
+
+                             <button
+                                type="button"
+                                onClick={() => setConversationMode('extreme')}
+                                className={`w-full py-3 px-4 rounded-xl text-left flex items-center justify-between transition-all ${conversationMode === 'extreme' ? 'bg-red-600/20 border border-red-500 text-red-400' : 'bg-white/5 border border-transparent hover:bg-white/10'}`}
+                             >
+                                <div>
+                                    <span className="font-bold block text-sm">Extreme Mode 🔥</span>
+                                    <span className="text-xs opacity-70">Unrestricted desire, raw output, stronger vocabulary.</span>
+                                </div>
+                                {conversationMode === 'extreme' && <span className="text-red-500 text-xl">✓</span>}
+                             </button>
+                        </div>
                     </div>
-                    {conversationMode === 'extreme' && <span className="text-red-500 text-xl">✓</span>}
-                 </button>
-            </div>
+                </div>
+             )}
         </div>
 
         <div>
