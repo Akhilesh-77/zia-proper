@@ -4,6 +4,9 @@
 export type AIModelOption = 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-flash-latest' | 'gemini-flash-lite-latest';
 export type VoicePreference = string;
 
+export type ConversationMode = 'normal' | 'spicy' | 'extreme';
+export type BotGender = 'female' | 'male' | 'fluid';
+
 export interface User {
   id: string;
   name: string;
@@ -24,7 +27,9 @@ export interface BotProfile {
   originalChatBackground?: string | null; // base64 data URL (uncropped original)
   chatBackgroundBrightness?: number; // Brightness percentage (e.g., 100)
   personaId?: string | null;
-  isSpicy?: boolean;
+  isSpicy?: boolean; // Kept for backward compatibility
+  conversationMode?: ConversationMode; // New field
+  gender?: BotGender; // New field
   galleryImages?: string[]; // List of additional images (base64)
   originalGalleryImages?: string[]; // List of original uncropped additional images (base64)
 }
@@ -48,4 +53,10 @@ export interface ChatSession {
   startTime: number;
   endTime: number;
   botId: string;
+}
+
+export interface CustomBlock {
+    id: string;
+    name: string;
+    description: string;
 }

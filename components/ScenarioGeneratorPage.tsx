@@ -1,13 +1,18 @@
+
 import React, { useState, useEffect } from 'react';
-import type { BotProfile, AIModelOption } from '../types';
+import type { BotProfile, AIModelOption, CustomBlock } from '../types';
 import { generateStory, generateScenarioIdea } from '../services/geminiService';
+import FullScreenEditor from './FullScreenEditor';
 
 interface StoryModePageProps {
   bots: BotProfile[];
   selectedAI: AIModelOption;
+  customBlocks: CustomBlock[];
+  onSaveBlock: (block: CustomBlock) => void;
+  onDeleteBlock: (id: string) => void;
 }
 
-const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI }) => {
+const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customBlocks, onSaveBlock, onDeleteBlock }) => {
     const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
     const [otherCharacters, setOtherCharacters] = useState('');
     const [scenario, setScenario] = useState('');
@@ -15,6 +20,12 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [isSuggesting, setIsSuggesting] = useState(false);
     const [copySuccess, setCopySuccess] = useState(false);
+
+    // Custom Blocks State
+    const [newBlockName, setNewBlockName] = useState('');
+    const [newBlockDesc, setNewBlockDesc] = useState('');
+    const [isAddingBlock, setIsAddingBlock] = useState(false);
+    const [blockCopyId, setBlockCopyId] = useState<string | null>(null);
 
     const handleToggleBot = (botId: string) => {
         const newSelection = new Set(selectedBotIds);
@@ -29,7 +40,11 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI }) => {
     const handleSuggestIdea = async () => {
         setIsSuggesting(true);
         try {
-            const idea = await generateScenarioIdea();
+            // Extract personalities for better suggestions
+            const selectedBots = bots.filter(b => selectedBotIds.has(b.id));
+            const personalities = selectedBots.map(b => b.personality);
+            
+            const idea = await generateScenarioIdea(personalities);
             setScenario(idea);
         } catch (error) {
             console.error(error);
@@ -77,6 +92,28 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI }) => {
             console.error('Could not copy text: ', err);
         });
     };
+
+    const handleSaveNewBlock = () => {
+        if(!newBlockName.trim() || !newBlockDesc.trim()) {
+            alert("Name and description required.");
+            return;
+        }
+        onSaveBlock({
+            id: `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: newBlockName,
+            description: newBlockDesc
+        });
+        setNewBlockName('');
+        setNewBlockDesc('');
+        setIsAddingBlock(false);
+    }
+
+    const handleCopyBlock = (text: string, id: string) => {
+        navigator.clipboard.writeText(text).then(() => {
+            setBlockCopyId(id);
+            setTimeout(() => setBlockCopyId(null), 1500);
+        });
+    }
 
     const inputClass = "w-full bg-white/10 dark:bg-black/10 p-3 rounded-2xl border border-white/20 dark:border-black/20 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-300 shadow-inner";
     const labelClass = "block text-sm font-medium mb-2";
@@ -158,6 +195,76 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI }) => {
                         </button>
                     </div>
                 )}
+                
+                {/* CUSTOM COPY BLOCKS */}
+                <div className="pt-8 mt-4 border-t border-white/10">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-bold">Custom Copy Blocks</h2>
+                        <button onClick={() => setIsAddingBlock(!isAddingBlock)} className="p-2 bg-white/10 rounded-full hover:bg-white/20 text-accent">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                        </button>
+                    </div>
+                    
+                    {isAddingBlock && (
+                        <div className="bg-white/5 p-4 rounded-xl mb-4 animate-fadeIn">
+                            <input 
+                                type="text" 
+                                placeholder="Block Name (e.g. My Intro)" 
+                                value={newBlockName} 
+                                onChange={e => setNewBlockName(e.target.value)} 
+                                className={`${inputClass} mb-2`}
+                            />
+                            <textarea 
+                                placeholder="Text to copy..." 
+                                value={newBlockDesc} 
+                                onChange={e => setNewBlockDesc(e.target.value)} 
+                                className={`${inputClass} mb-2`}
+                                rows={3}
+                            />
+                            <div className="flex gap-2">
+                                <button onClick={() => setIsAddingBlock(false)} className="flex-1 py-2 bg-gray-600 rounded-lg text-white">Cancel</button>
+                                <button onClick={handleSaveNewBlock} className="flex-1 py-2 bg-accent rounded-lg text-white font-bold">Save Block</button>
+                            </div>
+                        </div>
+                    )}
+                    
+                    <div className="space-y-3">
+                        {customBlocks && customBlocks.length > 0 ? (
+                            customBlocks.map(block => (
+                                <div key={block.id} className="bg-white/5 p-3 rounded-xl flex flex-col gap-2 group">
+                                    <div className="flex justify-between items-start">
+                                        <h3 className="font-bold text-base">{block.name}</h3>
+                                        <div className="flex gap-2">
+                                            <button 
+                                                onClick={() => handleCopyBlock(block.description, block.id)} 
+                                                className="p-2 bg-accent/20 rounded-lg hover:bg-accent/40 text-accent transition-colors"
+                                                title="Copy Text"
+                                            >
+                                                {blockCopyId === block.id ? (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                                                ) : (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                                                )}
+                                            </button>
+                                            <button 
+                                                onClick={() => onDeleteBlock(block.id)}
+                                                className="p-2 bg-red-500/20 rounded-lg hover:bg-red-500/40 text-red-500 transition-colors"
+                                                title="Delete Block"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="bg-black/20 p-2 rounded-lg text-sm text-gray-400 max-h-24 overflow-y-auto whitespace-pre-wrap border border-white/5">
+                                        {block.description}
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <p className="text-gray-500 text-center italic text-sm">No custom blocks yet. Tap + to add one.</p>
+                        )}
+                    </div>
+                </div>
             </main>
         </div>
     );

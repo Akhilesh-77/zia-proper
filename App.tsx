@@ -11,10 +11,11 @@ import CodePromptGeneratorPage from './components/CodePromptGeneratorPage';
 import StatsDashboard from './components/StatsDashboard';
 import FooterNav from './components/FooterNav';
 import SettingsPanel from './components/SettingsPanel';
-import type { User, BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference, ChatSession } from './types';
+import PhotoGalleryPage from './components/PhotoGalleryPage';
+import type { User, BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference, ChatSession, CustomBlock } from './types';
 import { migrateData, loadUserData, saveUserData, clearUserData } from './services/storageService';
 
-export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'story' | 'code' | 'stats';
+export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'story' | 'code' | 'stats' | 'photo';
 
 // A default user object for the login-free experience
 const defaultUser: User = {
@@ -35,6 +36,7 @@ const App: React.FC = () => {
   const [chatHistories, setChatHistories] = useState<Record<string, ChatMessage[]>>({});
   const [botUsage, setBotUsage] = useState<Record<string, number>>({});
   const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [customBlocks, setCustomBlocks] = useState<CustomBlock[]>([]);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedAI, setSelectedAI] = useState<AIModelOption>('gemini-2.5-flash');
@@ -56,6 +58,7 @@ const App: React.FC = () => {
         setChatHistories(data.chatHistories || {});
         setBotUsage(data.botUsage || {});
         setSessions(data.sessions || []);
+        setCustomBlocks(data.customBlocks || []);
         setTheme(data.theme || 'dark');
         setSelectedAI(data.selectedAI || 'gemini-2.5-flash');
         setVoicePreference(data.voicePreference || null);
@@ -72,6 +75,7 @@ const App: React.FC = () => {
   useEffect(() => { if (isDataLoaded) saveUserData({ chatHistories }); }, [chatHistories, isDataLoaded]);
   useEffect(() => { if (isDataLoaded) saveUserData({ botUsage }); }, [botUsage, isDataLoaded]);
   useEffect(() => { if (isDataLoaded) saveUserData({ sessions }); }, [sessions, isDataLoaded]);
+  useEffect(() => { if (isDataLoaded) saveUserData({ customBlocks }); }, [customBlocks, isDataLoaded]);
   useEffect(() => { if (isDataLoaded) saveUserData({ theme }); }, [theme, isDataLoaded]);
   useEffect(() => { if (isDataLoaded) saveUserData({ selectedAI }); }, [selectedAI, isDataLoaded]);
   useEffect(() => { if (isDataLoaded) saveUserData({ voicePreference }); }, [voicePreference, isDataLoaded]);
@@ -128,10 +132,22 @@ const App: React.FC = () => {
              setCurrentPage('chat');
           }
           break;
+        case '#photo':
+          // Must have a selected bot to show gallery
+          if (!selectedBotId) {
+             const storedId = sessionStorage.getItem('selectedBotId');
+             if (storedId && bots.some(b => b.id === storedId)) {
+                 setSelectedBotId(storedId);
+                 setCurrentPage('photo');
+             } else {
+                 window.location.hash = '#home';
+             }
+          } else {
+              setCurrentPage('photo');
+          }
+          break;
         case '#create':
           // Explicitly clear edit state only if navigating to 'new' create page is intended
-          // However, we handle the clearing in the handleNavigate function to allow
-          // history navigation (back button) to preserve form state if desired.
           setCurrentPage('create');
           break;
         case '#edit':
@@ -206,7 +222,8 @@ const App: React.FC = () => {
             'chat': '#chatview',
             'story': '#story',
             'code': '#code',
-            'stats': '#stats'
+            'stats': '#stats',
+            'photo': '#photo'
         }[page];
         if (hash) window.location.hash = hash;
     }
@@ -267,12 +284,11 @@ const App: React.FC = () => {
         if (window.confirm(`Are you sure you want to clone "${botToClone.name}"?`)) {
             const newBot: BotProfile = {
                 ...botToClone,
-                id: `bot-${Date.now()}`, // Generate new ID immediately
+                // Ensure truly unique ID even if cloned rapidly
+                id: `bot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, 
                 name: `${botToClone.name} (Clone)`,
             };
-            // Note: We don't add to 'bots' state yet, user must save in form.
             setBotToEdit(newBot);
-            // Use #edit hash to indicate we are editing a specific profile (even if transient)
             window.location.hash = '#edit';
         }
     }
@@ -282,7 +298,11 @@ const App: React.FC = () => {
     if ('id' in botData) {
       setBots(prev => prev.map(b => b.id === botData.id ? { ...b, ...botData } : b));
     } else {
-      const newBot = { ...botData, id: `bot-${Date.now()}` };
+      // FIX: Ensure ID is strictly unique to prevent collisions that hide bots in list
+      const newBot = { 
+          ...botData, 
+          id: `bot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` 
+      };
       setBots(prev => [...prev, newBot]);
     }
     setBotToEdit(null);
@@ -350,7 +370,17 @@ const App: React.FC = () => {
         setChatHistories({});
         setBotUsage({});
         setSessions([]);
+        setCustomBlocks([]);
       }
+  }, []);
+  
+  // Custom Blocks Handlers
+  const handleSaveBlock = useCallback((block: CustomBlock) => {
+      setCustomBlocks(prev => [...prev, block]);
+  }, []);
+
+  const handleDeleteBlock = useCallback((id: string) => {
+      setCustomBlocks(prev => prev.filter(b => b.id !== id));
   }, []);
 
   const handleConsentChange = useCallback((agreed: boolean) => {
@@ -395,7 +425,13 @@ const App: React.FC = () => {
       case 'images':
         return <ImageGeneratorPage />;
       case 'story':
-        return <ScenarioGeneratorPage bots={bots} selectedAI={selectedAI} />;
+        return <ScenarioGeneratorPage 
+                    bots={bots} 
+                    selectedAI={selectedAI} 
+                    customBlocks={customBlocks}
+                    onSaveBlock={handleSaveBlock}
+                    onDeleteBlock={handleDeleteBlock}
+                />;
       case 'code':
         return <CodePromptGeneratorPage />;
       case 'personas':
@@ -419,7 +455,12 @@ const App: React.FC = () => {
                     logSession={logSession}
                  />;
         }
-        // If state is invalid for chat, return null, effect will redirect
+        return null;
+      case 'photo':
+        if (selectedBot) {
+            // Only navigate back to chat if it was the previous context, otherwise home
+            return <PhotoGalleryPage bot={selectedBot} onBack={() => window.location.hash = '#chatview'} />;
+        }
         return null;
       default:
         return null;
@@ -445,7 +486,8 @@ const App: React.FC = () => {
       <div className="flex-1 overflow-hidden">
         {renderPage()}
       </div>
-      {currentPage !== 'chat' && currentPage !== 'stats' && (
+      {/* Hide footer nav on chat, stats and photo page */}
+      {currentPage !== 'chat' && currentPage !== 'stats' && currentPage !== 'photo' && (
         <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md">
             <FooterNav currentPage={currentPage} onNavigate={handleNavigate} />
         </div>

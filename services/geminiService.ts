@@ -126,15 +126,21 @@ const generateText = async (
 
 export const generateBotResponse = async (
   history: ChatMessage[],
-  botProfile: Pick<BotProfile, "personality" | "isSpicy">,
+  botProfile: Pick<BotProfile, "personality" | "isSpicy" | "conversationMode" | "gender">,
   selectedAI: AIModelOption
 ): Promise<string> => {
   try {
+    // Determine mode: prioritize new field, fallback to isSpicy flag
+    const mode = botProfile.conversationMode || (botProfile.isSpicy ? 'spicy' : 'normal');
+    // Determine gender: default to female (waifu-style standard) if not set
+    const gender = botProfile.gender || 'female';
+
     const enhancedPersonality = xyz(
       history,
       history[history.length - 1]?.text || "",
       botProfile.personality,
-      botProfile.isSpicy || false
+      mode,
+      gender
     );
     return await generateText(enhancedPersonality, history, selectedAI);
   } catch (error) {
@@ -199,10 +205,20 @@ ${characterProfiles}
   return await generateText(systemPrompt, [], selectedAI);
 }
 
-export async function generateScenarioIdea(): Promise<string> {
+export async function generateScenarioIdea(personalities?: string[]): Promise<string> {
   try {
+    const context = personalities && personalities.length > 0 
+        ? `Based on these personalities: ${personalities.slice(0, 3).join(' | ')}` 
+        : "For a spicy roleplay chat";
+        
+    const prompt = `
+    Give a creative, short, open-ended scenario idea ${context}.
+    Themes: Spicy, Suspense, Dramatic, Emotional Tension, Romantic Conflict.
+    Keep it short (1-2 sentences).
+    `;
+
     const idea = await generateText(
-      "Give a chaotic creative scenario. No rules.",
+      prompt,
       [],
       "gemini-2.5-flash"
     );

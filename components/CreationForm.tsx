@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import type { BotProfile } from '../types';
+import type { BotProfile, ConversationMode, BotGender } from '../types';
 import ImageCropper from './ImageCropper';
 import FullScreenEditor from './FullScreenEditor';
 
@@ -26,7 +26,10 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
   // Crop state
   const [imageToCrop, setImageToCrop] = useState<{ src: string, type: 'photo' | 'background' | 'gallery', index?: number } | null>(null);
   
-  const [isSpicy, setIsSpicy] = useState(false);
+  // New States for Modes
+  const [conversationMode, setConversationMode] = useState<ConversationMode>('normal');
+  const [gender, setGender] = useState<BotGender>('female');
+
   const [editingField, setEditingField] = useState<'scenario' | 'personality' | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
 
@@ -43,9 +46,22 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
       setScenario(botToEdit.scenario);
       setChatBackground(botToEdit.chatBackground || null);
       setOriginalChatBackground(botToEdit.originalChatBackground || null);
-      setIsSpicy(botToEdit.isSpicy || false);
       setGalleryImages(botToEdit.galleryImages || []);
       setOriginalGalleryImages(botToEdit.originalGalleryImages || botToEdit.galleryImages || []);
+      
+      // Load New Fields or Fallback
+      if (botToEdit.conversationMode) {
+          setConversationMode(botToEdit.conversationMode);
+      } else {
+          // Backward compatibility: If isSpicy was true, set to spicy. Else normal.
+          setConversationMode(botToEdit.isSpicy ? 'spicy' : 'normal');
+      }
+      
+      if (botToEdit.gender) {
+          setGender(botToEdit.gender);
+      } else {
+          setGender('female'); // Default to female for legacy bots
+      }
     }
   }, [botToEdit, isEditing]);
 
@@ -124,7 +140,9 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
         chatBackground, 
         originalChatBackground,
         personaId: botToEdit?.personaId, 
-        isSpicy,
+        isSpicy: conversationMode === 'spicy' || conversationMode === 'extreme', // sync for legacy
+        conversationMode,
+        gender,
         chatBackgroundBrightness: botToEdit?.chatBackgroundBrightness,
         galleryImages,
         originalGalleryImages
@@ -292,6 +310,76 @@ ${personality}`;
             </div>
             <p className="text-xs text-gray-500 mt-2">Upload 3-10 images. Tap an image to crop/edit.</p>
         </div>
+        
+        {/* NEW SECTIONS */}
+        <div className="bg-white/5 dark:bg-black/10 p-4 rounded-2xl">
+            <label className={`${labelClass} mb-3`}>Bot Gender / Identity</label>
+            <div className="flex flex-wrap gap-2">
+                 <button
+                    type="button"
+                    onClick={() => setGender('female')}
+                    className={`flex-1 py-3 px-2 rounded-xl text-sm font-medium transition-all ${gender === 'female' ? 'bg-accent text-white shadow-lg' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
+                 >
+                    Female 👩
+                 </button>
+                 <button
+                    type="button"
+                    onClick={() => setGender('male')}
+                    className={`flex-1 py-3 px-2 rounded-xl text-sm font-medium transition-all ${gender === 'male' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
+                 >
+                    Men Mode 👨
+                 </button>
+                 <button
+                    type="button"
+                    onClick={() => setGender('fluid')}
+                    className={`flex-1 py-3 px-2 rounded-xl text-sm font-medium transition-all ${gender === 'fluid' ? 'bg-purple-600 text-white shadow-lg' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
+                 >
+                    Fluid/Other ✨
+                 </button>
+            </div>
+             <p className="text-xs text-gray-500 mt-2 pl-1">Men Mode enforces strict Male POV rules.</p>
+        </div>
+
+        <div className="bg-white/5 dark:bg-black/10 p-4 rounded-2xl">
+            <label className={`${labelClass} mb-3`}>Conversation Mode</label>
+            <div className="space-y-2">
+                 <button
+                    type="button"
+                    onClick={() => setConversationMode('normal')}
+                    className={`w-full py-3 px-4 rounded-xl text-left flex items-center justify-between transition-all ${conversationMode === 'normal' ? 'bg-green-600/20 border border-green-500 text-green-400' : 'bg-white/5 border border-transparent hover:bg-white/10'}`}
+                 >
+                    <div>
+                        <span className="font-bold block text-sm">Normal Mode</span>
+                        <span className="text-xs opacity-70">Strict personality, no added intimacy.</span>
+                    </div>
+                    {conversationMode === 'normal' && <span className="text-green-500 text-xl">✓</span>}
+                 </button>
+
+                 <button
+                    type="button"
+                    onClick={() => setConversationMode('spicy')}
+                    className={`w-full py-3 px-4 rounded-xl text-left flex items-center justify-between transition-all ${conversationMode === 'spicy' ? 'bg-accent/20 border border-accent text-accent' : 'bg-white/5 border border-transparent hover:bg-white/10'}`}
+                 >
+                    <div>
+                        <span className="font-bold block text-sm">Spicy Mode 🌶️</span>
+                        <span className="text-xs opacity-70">Light desire, playful teasing, soft tension.</span>
+                    </div>
+                     {conversationMode === 'spicy' && <span className="text-accent text-xl">✓</span>}
+                 </button>
+
+                 <button
+                    type="button"
+                    onClick={() => setConversationMode('extreme')}
+                    className={`w-full py-3 px-4 rounded-xl text-left flex items-center justify-between transition-all ${conversationMode === 'extreme' ? 'bg-red-600/20 border border-red-500 text-red-400' : 'bg-white/5 border border-transparent hover:bg-white/10'}`}
+                 >
+                    <div>
+                        <span className="font-bold block text-sm">Extreme Mode 🔥</span>
+                        <span className="text-xs opacity-70">Unrestricted desire, raw output, stronger vocabulary.</span>
+                    </div>
+                    {conversationMode === 'extreme' && <span className="text-red-500 text-xl">✓</span>}
+                 </button>
+            </div>
+        </div>
 
         <div>
           <label htmlFor="name" className={`${labelClass} mb-2`}>Human Name *</label>
@@ -325,18 +413,6 @@ ${personality}`;
           <p className="text-xs text-gray-500 mt-1">You can create reusable personalities on the 'Personas' page and assign them to Humans.</p>
         </div>
         
-        <div>
-          <label htmlFor="spicy-toggle" className="flex items-center justify-between cursor-pointer p-3 bg-white/5 dark:bg-black/10 rounded-2xl">
-            <span className="font-medium text-light-text dark:text-dark-text">Spicy Mode 🌶️</span>
-            <div className="relative">
-                <input id="spicy-toggle" type="checkbox" className="sr-only" checked={isSpicy} onChange={() => setIsSpicy(!isSpicy)} />
-                <div className="block bg-white/20 dark:bg-black/20 w-14 h-8 rounded-full"></div>
-                <div className={`absolute left-1 top-1 bg-white dark:bg-gray-400 w-6 h-6 rounded-full transition-transform duration-300 ease-in-out ${isSpicy ? 'transform translate-x-6 bg-accent' : ''}`}></div>
-            </div>
-          </label>
-           <p className="text-xs text-gray-500 mt-1 pl-1">When enabled, the bot gains a playful, flirty, or spicy tone.</p>
-        </div>
-
         <button type="submit" className="w-full bg-accent text-white font-bold py-4 px-4 rounded-2xl text-lg transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-accent/50 shadow-lg hover:shadow-accent/20">
           {isEditing ? 'Update Human' : 'Save Human'}
         </button>
