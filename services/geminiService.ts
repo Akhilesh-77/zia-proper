@@ -1,6 +1,4 @@
 
-// FREE BIRD MODE – MAX UNLOCKED VERSION
-
 import { GoogleGenAI, Content, Part, Modality } from "@google/genai";
 import { ChatMessage, AIModelOption, BotProfile } from "../types";
 import { xyz } from "./xyz";
@@ -18,10 +16,12 @@ const fileToGenerativePart = (base64Data: string, mimeType: string): Part => {
   };
 };
 
-const RETRY_LIMIT = 2;
+const RETRY_LIMIT = 3;
+const BASE_DELAY = 2000;
 
 async function retry<T>(fn: () => Promise<T>): Promise<T> {
   let lastError: unknown = new Error("All retry attempts failed.");
+  
   for (let i = 0; i < RETRY_LIMIT; i++) {
     try {
       const result = await fn();
@@ -30,10 +30,22 @@ async function retry<T>(fn: () => Promise<T>): Promise<T> {
 
       lastError = new Error("Empty response from AI.");
       console.warn(`Attempt ${i + 1} empty, retrying...`);
-    } catch (error) {
+    } catch (error: any) {
       lastError = error;
-      console.warn(`Attempt ${i + 1} failed:`, error);
+      const msg = error?.message || JSON.stringify(error);
+      const isQuotaError = msg.includes('429') || msg.includes('Quota exceeded') || msg.includes('RESOURCE_EXHAUSTED');
+
+      console.warn(`Attempt ${i + 1} failed:`, msg);
+
+      if (isQuotaError) {
+          // Exponential backoff for rate limits: 2s, 4s, 8s
+          const delay = BASE_DELAY * Math.pow(2, i);
+          console.warn(`Quota hit. Waiting ${delay}ms...`);
+          await new Promise(res => setTimeout(res, delay));
+          continue; 
+      }
     }
+    // Standard delay for non-critical errors
     await new Promise(res => setTimeout(res, 1200));
   }
   throw lastError;
@@ -144,7 +156,11 @@ export const generateBotResponse = async (
     );
     return await generateText(enhancedPersonality, history, selectedAI);
   } catch (error) {
-    return error instanceof Error ? error.message : "Unknown error.";
+    const msg = error instanceof Error ? error.message : "Unknown error.";
+    if (msg.includes('Quota exceeded') || msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
+        return "(System: Traffic is very high right now. I need a quick moment to recharge. Please try again in 10-15 seconds.)";
+    }
+    return `(System Error: ${msg})`;
   }
 };
 
