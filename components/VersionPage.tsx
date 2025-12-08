@@ -16,7 +16,7 @@ const VersionPage: React.FC = () => {
            
            <div className="text-center space-y-3 text-gray-500 dark:text-gray-400">
               <p className="font-medium">© 2025 Zia.ai — Powered by Gemini AI</p>
-              <p className="font-mono text-sm opacity-70">Version: v21</p>
+              <p className="font-mono text-sm opacity-70">Version: v1.0.0</p>
            </div>
        </div>
     </div>

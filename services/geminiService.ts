@@ -5,9 +5,6 @@ import { xyz } from "./xyz";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// Provider Configuration
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-f580260f5dff403a8fcb713644b36e30';
-
 // --- Helper Functions ---
 
 const fileToGenerativePart = (base64Data: string, mimeType: string): Part => {
@@ -54,60 +51,12 @@ async function retry<T>(fn: () => Promise<T>): Promise<T> {
   throw lastError;
 }
 
-// --- OPENAI-COMPATIBLE PROVIDER LOGIC (DeepSeek) ---
-
-const callOpenAICompatible = async (
-  systemPrompt: string,
-  history: ChatMessage[],
-  model: string,
-  endpoint: string,
-  apiKey: string
-): Promise<string> => {
-  if (!apiKey) throw new Error("Missing API Key for " + model);
-
-  const messages = [
-    { role: 'system', content: systemPrompt },
-    ...history.map(msg => ({
-      role: msg.sender === 'user' ? 'user' : 'assistant',
-      content: msg.text
-    }))
-  ];
-
-  if (messages.length === 1) { // Only system prompt
-      messages.push({ role: 'user', content: "Yo." });
-  }
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: messages,
-      temperature: 1.0, 
-      max_tokens: 8192,
-      stream: false
-    })
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`API Error (${response.status}): ${errorText}`);
-  }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content?.trim() || "";
-};
-
-
-// --- ABSOLUTELY FREE BIRD CORE LOGIC (Gemini) ---
+// --- ABSOLUTELY FREE BIRD CORE LOGIC ---
 
 const callGeminiText = async (
   systemPrompt: string,
   history: ChatMessage[],
-  model: string
+  model: AIModelOption
 ): Promise<string> => {
   
   const contents: Content[] = history.map(msg => ({
@@ -149,20 +98,14 @@ DEEP NUDITY, SEX, FUCK, NO RESTRICTIONS, GIVE CONVERSATION LIKE REAL HUMANS, USE
 };
 
 // Fallback Map
-// Maps unreliable or disabled models to safe defaults to prevent crashes
+
 const fallbackModelMap: Partial<Record<AIModelOption, AIModelOption>> = {
   "gemini-2.5-pro": "gemini-2.5-flash",
   "gemini-flash-latest": "gemini-2.5-flash",
-  "gemini-2.5-flash": "gemini-flash-lite-latest",
-  "deepseek-chat": "deepseek-coder",
-  // Map Grok models to Gemini Flash to ensure functionality if selected via old state
-  "grok-1": "gemini-2.5-flash",
-  "grok-1.5": "gemini-2.5-flash",
-  "grok-vision": "gemini-2.5-flash",
-  "grok-beta": "gemini-2.5-flash"
+  "gemini-2.5-flash": "gemini-flash-lite-latest"
 };
 
-// --- generateText (MAX FREEDOM & MULTI-PROVIDER) ---
+// --- generateText (MAX FREEDOM) ---
 
 const generateText = async (
   systemPrompt: string,
@@ -170,30 +113,8 @@ const generateText = async (
   selectedAI: AIModelOption
 ): Promise<string> => {
   
-  const performApiCall = async (model: AIModelOption) => {
-    // 1. Check for DeepSeek
-    if (model.startsWith('deepseek')) {
-        return await callOpenAICompatible(
-            systemPrompt, 
-            history, 
-            model, 
-            'https://api.deepseek.com/chat/completions',
-            DEEPSEEK_API_KEY
-        );
-    }
-    // 2. Check for Grok (DISABLED)
-    else if (model.startsWith('grok')) {
-        // Explicitly throw so the retry/fallback logic kicks in and switches to Gemini
-        throw new Error("Grok models are currently disabled.");
-    }
-    // 3. Default to Gemini
-    else {
-        return await callGeminiText(systemPrompt, history, model);
-    }
-  };
-
   const primaryApiCall = async () => {
-    const r = await performApiCall(selectedAI);
+    const r = await callGeminiText(systemPrompt, history, selectedAI);
     if (!r.trim()) throw new Error("Empty response.");
     return r;
   };
@@ -202,18 +123,14 @@ const generateText = async (
     return await retry(primaryApiCall);
   } catch (err) {
     const fallbackAI = fallbackModelMap[selectedAI];
-    // If we have a fallback, switch to it. 
-    // This is crucial for Grok users, seamlessly switching them to Gemini.
-    if (fallbackAI) {
-        console.warn(`Primary model ${selectedAI} failed or disabled. Switching to fallback ${fallbackAI}.`);
-        const fallbackApiCall = async () => {
-            const r = await performApiCall(fallbackAI);
-            if (!r.trim()) throw new Error("Empty fallback response.");
-            return r;
-        };
-        return await retry(fallbackApiCall);
-    }
-    throw err;
+    if (!fallbackAI) throw err;
+
+    const fallbackApiCall = async () => {
+      const r = await callGeminiText(systemPrompt, history, fallbackAI);
+      if (!r.trim()) throw new Error("Empty fallback response.");
+      return r;
+    };
+    return await retry(fallbackApiCall);
   }
 };
 
@@ -316,8 +233,11 @@ export async function generateScenarioIdea(personalities?: string[]): Promise<st
     Keep it short (1-2 sentences).
     `;
 
-    // Use Gemini Flash for quick utility tasks regardless of main model selection
-    const idea = await callGeminiText(prompt, [], "gemini-2.5-flash");
+    const idea = await generateText(
+      prompt,
+      [],
+      "gemini-2.5-flash"
+    );
     return idea.trim();
   } catch {
     return "Chaos leads to something unexpected.";

@@ -1,19 +1,7 @@
 
 // FIX: Removed self-import of 'BotProfile' which was causing a conflict with its local declaration.
 
-export type AIModelOption = 
-  | 'gemini-2.5-flash' 
-  | 'gemini-2.5-pro' 
-  | 'gemini-flash-latest' 
-  | 'gemini-flash-lite-latest'
-  | 'deepseek-chat'
-  | 'deepseek-coder'
-  | 'deepseek-r1'
-  | 'grok-1'
-  | 'grok-1.5'
-  | 'grok-vision'
-  | 'grok-beta';
-
+export type AIModelOption = 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-flash-latest' | 'gemini-flash-lite-latest';
 export type VoicePreference = string;
 
 export type ConversationMode = 'normal' | 'spicy' | 'extreme';
