@@ -264,10 +264,11 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
                     }}
                 >
                     {/* IMAGE (Handles Scale & Pan Translate) */}
+                    {/* UPDATED: w-full h-full object-contain ensures it fills the screen bounds without cropping/cover */}
                     <img 
                         src={images[currentIndex]} 
                         alt="Gallery"
-                        className="max-w-full max-h-full object-contain select-none pointer-events-none will-change-transform"
+                        className="w-full h-full object-contain select-none pointer-events-none will-change-transform"
                         draggable={false}
                         style={{
                             transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
@@ -275,11 +276,6 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
                         }}
                     />
                 </div>
-            </div>
-            
-            {/* Minimal Instructions (Optional, keeps UI clean) */}
-            <div className="absolute bottom-6 left-0 right-0 text-center pointer-events-none opacity-50">
-                 {/* No counters, no arrows. Just clean view. */}
             </div>
         </div>
     );

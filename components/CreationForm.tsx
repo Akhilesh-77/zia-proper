@@ -253,6 +253,9 @@ ${personality}`;
                 outputShape={'rectangle'}
                 onClose={() => setImageToCrop(null)}
                 onCropComplete={(croppedImage) => {
+                    // Safety check if state was cleared unexpectedly
+                    if (!imageToCrop) return;
+
                     if (imageToCrop.type === 'photo') {
                         setPhoto(croppedImage);
                         // Store the EXACT original base64
@@ -261,14 +264,15 @@ ${personality}`;
                         setChatBackground(croppedImage);
                         // Store the EXACT original base64
                         setOriginalChatBackground(imageToCrop.src);
-                    } else if (imageToCrop.type === 'gallery' && imageToCrop.index !== undefined) {
-                        // Update the specific gallery image with the high quality crop
+                    } else if (imageToCrop.type === 'gallery' && typeof imageToCrop.index === 'number') {
+                        // FIX: Ensure we only replace the item at the specific index.
+                        // We do NOT update originalGalleryImages here, preserving the master copy.
                         setGalleryImages(prev => {
+                            if (imageToCrop.index! >= prev.length) return prev; // Boundary check
                             const newImages = [...prev];
                             newImages[imageToCrop.index!] = croppedImage;
                             return newImages;
                         });
-                        // IMPORTANT: We do NOT update originalGalleryImages here, ensuring the uncropped original is preserved.
                     }
                     setImageToCrop(null);
                 }}
