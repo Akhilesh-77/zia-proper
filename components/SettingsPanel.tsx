@@ -19,12 +19,33 @@ interface SettingsPanelProps {
   onNavigate: (page: Page) => void;
 }
 
-// FIX: Corrected the display names for Gemini models from 1.5 to 2.5 to match the actual models.
-const aiModelOptions: { id: AIModelOption, name: string }[] = [
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-    { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)' },
-    { id: 'gemini-flash-lite-latest', name: 'Gemini Flash Lite' },
+const aiModelGroups = [
+    {
+        label: "Gemini Models (Google)",
+        options: [
+            { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+            { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+            { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)' },
+            { id: 'gemini-flash-lite-latest', name: 'Gemini Flash Lite' },
+        ]
+    },
+    {
+        label: "DeepSeek Models",
+        options: [
+            { id: 'deepseek-chat', name: 'DeepSeek Chat' },
+            { id: 'deepseek-coder', name: 'DeepSeek Coder' },
+            { id: 'deepseek-r1', name: 'DeepSeek R1' },
+        ]
+    },
+    {
+        label: "Grok Models (xAI)",
+        options: [
+            { id: 'grok-1', name: 'Grok 1' },
+            { id: 'grok-1.5', name: 'Grok 1.5' },
+            { id: 'grok-vision', name: 'Grok Vision' },
+            { id: 'grok-beta', name: 'Grok Beta' },
+        ]
+    }
 ];
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, toggleTheme, onClearData, selectedAI, onSelectAI, voicePreference, onSetVoicePreference, hasConsented, onConsentChange, onNavigate }) => {
@@ -48,11 +69,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, t
   }, []);
 
   const handleNavigateStats = () => {
-    // Navigate using hash directly via window location in parent, or prop.
-    // Since App.tsx passes a handleNavigate that sets hash, we can use that.
     onNavigate('stats');
-    // We don't manually close here because the hash change listener in App.tsx
-    // will see '#stats' and set isSettingsOpen(false).
+  }
+
+  const handleNavigateVersion = () => {
+    onNavigate('version');
   }
 
   return (
@@ -104,19 +125,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, t
                 <div className="bg-white/5 dark:bg-black/10 p-4 rounded-xl">
                     <p className="font-medium mb-2">AI Model</p>
                     <p className="text-xs text-gray-400 mb-3">Select the AI model to use for generating chat responses.</p>
-                    <div className="space-y-2">
-                        {aiModelOptions.map(option => (
-                             <label key={option.id} className="flex items-center cursor-pointer">
-                                <input 
-                                    type="radio" 
-                                    name="ai-model" 
-                                    value={option.id}
-                                    checked={selectedAI === option.id}
-                                    onChange={() => onSelectAI(option.id)}
-                                    className="h-4 w-4 text-accent bg-gray-700 border-gray-600 focus:ring-accent"
-                                />
-                                <span className="ml-3 text-sm">{option.name}</span>
-                            </label>
+                    <div className="space-y-4">
+                        {aiModelGroups.map((group) => (
+                            <div key={group.label}>
+                                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">{group.label}</h3>
+                                <div className="space-y-2">
+                                    {group.options.map(option => (
+                                         <label key={option.id} className="flex items-center cursor-pointer">
+                                            <input 
+                                                type="radio" 
+                                                name="ai-model" 
+                                                value={option.id}
+                                                checked={selectedAI === option.id}
+                                                onChange={() => onSelectAI(option.id as AIModelOption)}
+                                                className="h-4 w-4 text-accent bg-gray-700 border-gray-600 focus:ring-accent"
+                                            />
+                                            <span className="ml-3 text-sm">{option.name}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
                         ))}
                     </div>
                 </div>
@@ -128,6 +156,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, t
                         className="w-full bg-accent/80 text-white font-bold py-2 px-4 rounded-lg transition-colors hover:bg-accent"
                     >
                         Usage Stats
+                    </button>
+                    <button 
+                        onClick={handleNavigateVersion}
+                        className="w-full bg-gray-600/80 text-white font-bold py-2 px-4 rounded-lg transition-colors hover:bg-gray-500"
+                    >
+                        Version Info
                     </button>
                 </div>
 

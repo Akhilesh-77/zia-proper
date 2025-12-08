@@ -12,10 +12,11 @@ import StatsDashboard from './components/StatsDashboard';
 import FooterNav from './components/FooterNav';
 import SettingsPanel from './components/SettingsPanel';
 import PhotoGalleryPage from './components/PhotoGalleryPage';
+import VersionPage from './components/VersionPage';
 import type { User, BotProfile, Persona, ChatMessage, AIModelOption, VoicePreference, ChatSession, CustomBlock } from './types';
 import { migrateData, loadUserData, saveUserData, clearUserData } from './services/storageService';
 
-export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'story' | 'code' | 'stats' | 'photo';
+export type Page = 'home' | 'humans' | 'create' | 'images' | 'personas' | 'chat' | 'story' | 'code' | 'stats' | 'photo' | 'version';
 
 // A default user object for the login-free experience
 const defaultUser: User = {
@@ -183,6 +184,9 @@ const App: React.FC = () => {
         case '#persona':
           setCurrentPage('personas');
           break;
+        case '#version':
+          setCurrentPage('version');
+          break;
         default:
           // Default route
           if (!hash) {
@@ -223,7 +227,8 @@ const App: React.FC = () => {
             'story': '#story',
             'code': '#code',
             'stats': '#stats',
-            'photo': '#photo'
+            'photo': '#photo',
+            'version': '#version'
         }[page];
         if (hash) window.location.hash = hash;
     }
@@ -462,6 +467,8 @@ const App: React.FC = () => {
             return <PhotoGalleryPage bot={selectedBot} onBack={() => window.location.hash = '#chatview'} />;
         }
         return null;
+      case 'version':
+          return <VersionPage />;
       default:
         return null;
     }
@@ -486,8 +493,8 @@ const App: React.FC = () => {
       <div className="flex-1 overflow-hidden">
         {renderPage()}
       </div>
-      {/* Hide footer nav on chat, stats and photo page */}
-      {currentPage !== 'chat' && currentPage !== 'stats' && currentPage !== 'photo' && (
+      {/* Hide footer nav on chat, stats, photo and version page */}
+      {currentPage !== 'chat' && currentPage !== 'stats' && currentPage !== 'photo' && currentPage !== 'version' && (
         <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md">
             <FooterNav currentPage={currentPage} onNavigate={handleNavigate} />
         </div>
