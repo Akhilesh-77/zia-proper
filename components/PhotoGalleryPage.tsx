@@ -7,54 +7,62 @@ interface PhotoGalleryPageProps {
     onBack: () => void;
 }
 
-// Helper for preloading images
+// Helper for preloading images to prevent flickering
 const preloadImage = (src: string) => {
     try {
         const img = new Image();
         img.src = src;
     } catch (e) {
-        // Silently fail if preload fails to avoid interruption
+        // Ignore preload errors
     }
 };
 
 const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
-    // --- 1. Data Preparation ---
-    // FIX: Prioritize CROPPED images over original images as requested.
+    // --- 1. Image List Preparation (Safe & Prioritizing Crops) ---
     const images = React.useMemo(() => {
         const list: string[] = [];
-        
-        // Background
-        if (bot.chatBackground) list.push(bot.chatBackground);
-        else if (bot.originalChatBackground) list.push(bot.originalChatBackground);
-        
-        // Profile Photo
-        if (bot.photo) list.push(bot.photo);
-        else if (bot.originalPhoto) list.push(bot.originalPhoto);
-        
-        // Gallery Images (Prioritize the cropped/edited list)
-        if (bot.galleryImages && bot.galleryImages.length > 0) {
-            list.push(...bot.galleryImages);
-        } else if (bot.originalGalleryImages && bot.originalGalleryImages.length > 0) {
-            list.push(...bot.originalGalleryImages);
+        try {
+            // Priority 1: Cropped Background
+            if (bot.chatBackground && typeof bot.chatBackground === 'string') {
+                list.push(bot.chatBackground);
+            } else if (bot.originalChatBackground && typeof bot.originalChatBackground === 'string') {
+                list.push(bot.originalChatBackground);
+            }
+
+            // Priority 2: Cropped Profile Photo
+            if (bot.photo && typeof bot.photo === 'string') {
+                list.push(bot.photo);
+            } else if (bot.originalPhoto && typeof bot.originalPhoto === 'string') {
+                list.push(bot.originalPhoto);
+            }
+
+            // Priority 3: Cropped Gallery Images
+            // CreationForm updates 'galleryImages' with crops. We use that list directly.
+            if (bot.galleryImages && Array.isArray(bot.galleryImages) && bot.galleryImages.length > 0) {
+                list.push(...bot.galleryImages);
+            } else if (bot.originalGalleryImages && Array.isArray(bot.originalGalleryImages) && bot.originalGalleryImages.length > 0) {
+                list.push(...bot.originalGalleryImages);
+            }
+        } catch (e) {
+            console.warn("Error processing gallery images", e);
         }
         
-        // Filter out nulls/undefined and duplicates
-        return Array.from(new Set(list)).filter(Boolean);
+        // Remove duplicates and empty strings
+        return Array.from(new Set(list)).filter(src => typeof src === 'string' && src.length > 10);
     }, [bot]);
 
-    // --- 2. State Management ---
+    // --- 2. State ---
     const [currentIndex, setCurrentIndex] = useState(0);
-    const [isExiting, setIsExiting] = useState(false);
     const [isMounted, setIsMounted] = useState(false);
-    const [uiVisible, setUiVisible] = useState(true);
+    const [isExiting, setIsExiting] = useState(false);
 
     // Transform State
     const [scale, setScale] = useState(1);
     const [translate, setTranslate] = useState({ x: 0, y: 0 });
     const [swipeOffset, setSwipeOffset] = useState(0);
-    const [isDragging, setIsDragging] = useState(false); // Visual cursor state
+    const [isDragging, setIsDragging] = useState(false);
 
-    // --- 3. Animation & Logic Refs ---
+    // --- 3. Refs for Gesture Logic ---
     const gesture = useRef({
         startX: 0,
         startY: 0,
@@ -64,48 +72,22 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
         initialTranslateY: 0,
         pointers: new Map<number, { x: number, y: number }>(),
         isPinching: false,
-        isPanning: false,
         startTime: 0,
     });
 
-    const swipeAnimRef = useRef<number | null>(null);
-
-    // --- 4. Lifecycle & Preloading ---
+    // --- 4. Lifecycle ---
     useEffect(() => {
-        // Trigger entrance animation
         requestAnimationFrame(() => setIsMounted(true));
-        
-        // Preload neighbors
+        // Preload adjacent images
         if (images[currentIndex + 1]) preloadImage(images[currentIndex + 1]);
         if (images[currentIndex - 1]) preloadImage(images[currentIndex - 1]);
-        
-        return () => {
-            if (swipeAnimRef.current) cancelAnimationFrame(swipeAnimRef.current);
-        };
     }, [currentIndex, images]);
 
-    // --- 5. Navigation Handlers ---
-    const handleExit = useCallback(() => {
+    // --- 5. Navigation & Reset ---
+    const handleClose = useCallback(() => {
         setIsExiting(true);
-        // Wait for animation to finish before calling onBack
-        setTimeout(() => {
-            onBack();
-        }, 300);
+        setTimeout(onBack, 300);
     }, [onBack]);
-
-    const nextImage = useCallback(() => {
-        if (currentIndex < images.length - 1) {
-            setCurrentIndex(prev => prev + 1);
-        }
-        resetTransform();
-    }, [currentIndex, images.length]);
-
-    const prevImage = useCallback(() => {
-        if (currentIndex > 0) {
-            setCurrentIndex(prev => prev - 1);
-        }
-        resetTransform();
-    }, [currentIndex]);
 
     const resetTransform = () => {
         setScale(1);
@@ -113,14 +95,31 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
         setSwipeOffset(0);
     };
 
-    // --- 6. Gesture Logic (The Core) ---
+    const nextImage = useCallback(() => {
+        if (currentIndex < images.length - 1) {
+            setCurrentIndex(prev => prev + 1);
+            resetTransform();
+        } else {
+            setSwipeOffset(0); // Snap back if at end
+        }
+    }, [currentIndex, images.length]);
+
+    const prevImage = useCallback(() => {
+        if (currentIndex > 0) {
+            setCurrentIndex(prev => prev - 1);
+            resetTransform();
+        } else {
+            setSwipeOffset(0); // Snap back if at start
+        }
+    }, [currentIndex]);
+
+    // --- 6. Gesture Handlers ---
     const getDistance = (p1: { x: number, y: number }, p2: { x: number, y: number }) => {
         return Math.hypot(p1.x - p2.x, p1.y - p2.y);
     };
 
     const handleTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
         try {
-            // Normalize mouse vs touch
             const points: { id: number, x: number, y: number }[] = [];
             if ('touches' in e) {
                 for (let i = 0; i < e.touches.length; i++) {
@@ -130,33 +129,26 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
                 points.push({ id: 999, x: (e as React.MouseEvent).clientX, y: (e as React.MouseEvent).clientY });
             }
 
-            // Update pointers map
             gesture.current.pointers.clear();
             points.forEach(p => gesture.current.pointers.set(p.id, p));
-            
             gesture.current.startTime = Date.now();
             setIsDragging(true);
 
             if (gesture.current.pointers.size === 2) {
-                // PINCH START
+                // Pinch Start
                 const pArr = Array.from(gesture.current.pointers.values());
                 gesture.current.isPinching = true;
                 gesture.current.startDist = getDistance(pArr[0], pArr[1]);
                 gesture.current.startScale = scale;
             } else if (gesture.current.pointers.size === 1) {
-                // PAN or SWIPE START
+                // Pan/Swipe Start
                 const p = points[0];
                 gesture.current.startX = p.x;
                 gesture.current.startY = p.y;
                 gesture.current.initialTranslateX = translate.x;
                 gesture.current.initialTranslateY = translate.y;
-                
-                // If scaled > 1, we are panning. If scale == 1, we are swiping.
-                gesture.current.isPanning = scale > 1;
             }
-        } catch (err) {
-            console.error("Gesture Start Error", err);
-        }
+        } catch (err) { console.error(err); }
     };
 
     const handleTouchMove = (e: React.TouchEvent | React.MouseEvent) => {
@@ -171,12 +163,11 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
                 points.push({ id: 999, x: (e as React.MouseEvent).clientX, y: (e as React.MouseEvent).clientY });
             }
 
-            // Sync pointers
             points.forEach(p => gesture.current.pointers.set(p.id, p));
             const pArr = Array.from(gesture.current.pointers.values());
 
             if (gesture.current.isPinching && pArr.length === 2) {
-                // ZOOMING
+                // Zooming
                 const dist = getDistance(pArr[0], pArr[1]);
                 if (gesture.current.startDist > 0) {
                     const newScale = Math.max(1, Math.min(gesture.current.startScale * (dist / gesture.current.startDist), 5));
@@ -187,24 +178,22 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
                 const dy = pArr[0].y - gesture.current.startY;
 
                 if (scale > 1) {
-                    // PANNING
+                    // Panning (only when zoomed in)
                     setTranslate({
                         x: gesture.current.initialTranslateX + dx,
                         y: gesture.current.initialTranslateY + dy
                     });
                 } else {
-                    // SWIPING
-                    // Add elastic resistance at edges
+                    // Swiping (only when scale is 1)
+                    // Add resistance at edges
                     let effectiveDx = dx;
                     if ((currentIndex === 0 && dx > 0) || (currentIndex === images.length - 1 && dx < 0)) {
-                        effectiveDx = dx * 0.3; // Resistance
+                        effectiveDx = dx * 0.4;
                     }
                     setSwipeOffset(effectiveDx);
                 }
             }
-        } catch (err) {
-            console.error("Gesture Move Error", err);
-        }
+        } catch (err) { console.error(err); }
     };
 
     const handleTouchEnd = (e: React.TouchEvent | React.MouseEvent) => {
@@ -212,53 +201,52 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
             setIsDragging(false);
             const pCount = 'touches' in e ? e.touches.length : 0;
             
-            // If interaction ended (0 fingers)
             if (pCount === 0) {
                 gesture.current.isPinching = false;
                 
                 if (scale > 1) {
-                    // END ZOOM/PAN
+                    // Check bounds for panning could go here, but for now just prevent scale < 1
                     if (scale < 1) setScale(1);
                 } else {
-                    // END SWIPE
+                    // Handle Swipe completion
                     const dt = Date.now() - gesture.current.startTime;
                     const dx = swipeOffset;
-                    
-                    const isFling = dt < 300 && Math.abs(dx) > 30;
+                    const isFling = dt < 300 && Math.abs(dx) > 40;
                     const isDragFar = Math.abs(dx) > window.innerWidth / 3;
 
                     if ((isFling || isDragFar) && Math.abs(dx) > 0) {
-                        if (dx > 0 && currentIndex > 0) {
-                            prevImage();
-                        } else if (dx < 0 && currentIndex < images.length - 1) {
-                            nextImage();
-                        } else {
-                            setSwipeOffset(0);
-                        }
+                        if (dx > 0) prevImage();
+                        else nextImage();
                     } else {
-                        // Reset if no significant action
-                        if (Math.abs(dx) < 5 && dt < 200) {
-                            setUiVisible(prev => !prev);
-                        }
-                        setSwipeOffset(0);
+                        setSwipeOffset(0); // Snap back
                     }
                 }
             }
-        } catch (err) {
-            console.error("Gesture End Error", err);
+        } catch (err) { 
+            console.error(err);
             setSwipeOffset(0);
         }
     };
 
-    if (images.length === 0) return null;
+    if (!images || images.length === 0) return null;
 
     return (
-        <div 
-            className={`fixed inset-0 z-50 flex items-center justify-center bg-black transition-opacity duration-300 ease-out overflow-hidden touch-none ${isMounted && !isExiting ? 'bg-opacity-100' : 'bg-opacity-0'}`}
-        >
-            {/* BACKDROP & GESTURE LAYER */}
+        <div className={`fixed inset-0 z-[60] bg-black flex items-center justify-center overflow-hidden touch-none transition-opacity duration-300 ${isMounted && !isExiting ? 'opacity-100' : 'opacity-0'}`}>
+            
+            {/* CLOSE BUTTON - Top Right */}
+            <button 
+                onClick={handleClose}
+                className="absolute top-6 right-6 z-[70] p-3 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/70 transition-all shadow-lg active:scale-95"
+                aria-label="Close Viewer"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+
+            {/* GESTURE AREA */}
             <div 
-                className="absolute inset-0 w-full h-full"
+                className="absolute inset-0 w-full h-full flex items-center justify-center"
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
@@ -267,73 +255,31 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
                 onMouseUp={handleTouchEnd}
                 onMouseLeave={handleTouchEnd}
             >
-                {/* IMAGE CONTAINER */}
+                {/* IMAGE WRAPPER (Handles Swipe Translate) */}
                 <div 
-                    className={`w-full h-full flex items-center justify-center transition-transform duration-300 ease-out ${isMounted && !isExiting ? 'scale-100 opacity-100' : 'scale-90 opacity-0'}`}
+                    className="w-full h-full flex items-center justify-center will-change-transform"
+                    style={{
+                        transform: `translateX(${swipeOffset}px)`,
+                        transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)'
+                    }}
                 >
-                    <div 
-                        className="relative w-full h-full flex items-center justify-center will-change-transform"
-                        style={{ 
-                            transform: `translateX(${swipeOffset}px)`,
-                            transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)' 
+                    {/* IMAGE (Handles Scale & Pan Translate) */}
+                    <img 
+                        src={images[currentIndex]} 
+                        alt="Gallery"
+                        className="max-w-full max-h-full object-contain select-none pointer-events-none will-change-transform"
+                        draggable={false}
+                        style={{
+                            transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
+                            transition: isDragging && scale > 1 ? 'none' : 'transform 0.2s ease-out'
                         }}
-                    >
-                        {/* Current Image (Showing Cropped Version if available) */}
-                        <img 
-                            src={images[currentIndex]} 
-                            alt="Gallery View" 
-                            className="max-w-full max-h-full object-contain select-none pointer-events-none will-change-transform"
-                            draggable={false}
-                            style={{
-                                transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
-                                transition: isDragging && scale > 1 ? 'none' : 'transform 0.2s ease-out'
-                            }}
-                        />
-                        
-                        {/* Preload Neighbors for smooth swipe */}
-                        {currentIndex > 0 && (
-                             <img 
-                                src={images[currentIndex - 1]} 
-                                className="absolute right-full mr-4 max-w-full max-h-full object-contain opacity-50"
-                                style={{ transform: 'scale(0.8)' }}
-                                alt="prev"
-                            />
-                        )}
-                        {currentIndex < images.length - 1 && (
-                             <img 
-                                src={images[currentIndex + 1]} 
-                                className="absolute left-full ml-4 max-w-full max-h-full object-contain opacity-50"
-                                style={{ transform: 'scale(0.8)' }}
-                                alt="next"
-                            />
-                        )}
-                    </div>
+                    />
                 </div>
             </div>
-
-            {/* UI OVERLAY */}
-            <div 
-                className={`absolute top-0 left-0 right-0 p-4 flex justify-end items-center transition-all duration-300 z-20 pointer-events-none ${uiVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'}`}
-                style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.6), transparent)' }}
-            >
-                {/* FIX: Back Button moved to Top Right, removed counter text */}
-                <button 
-                    onClick={handleExit} 
-                    className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/60 transition-colors pointer-events-auto"
-                    aria-label="Close Viewer"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
-
-            {/* Bottom UI Instructions */}
-            <div 
-                 className={`absolute bottom-0 left-0 right-0 p-6 flex justify-center transition-all duration-300 z-20 pointer-events-none ${uiVisible ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'}`}
-                 style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.6), transparent)' }}
-            >
-                <p className="text-white/70 text-xs">Swipe to browse • Pinch to zoom</p>
+            
+            {/* Minimal Instructions (Optional, keeps UI clean) */}
+            <div className="absolute bottom-6 left-0 right-0 text-center pointer-events-none opacity-50">
+                 {/* No counters, no arrows. Just clean view. */}
             </div>
         </div>
     );
