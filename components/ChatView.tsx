@@ -328,7 +328,7 @@ const ChatView: React.FC<ChatViewProps> = ({ bot, onBack, chatHistory, onNewMess
 
   const handleCopyPrompt = (e: React.MouseEvent) => {
     e.preventDefault();
-    const promptToCopy = "Reply in short, simple messages, just like a human would in a chat.";
+    const promptToCopy = " . Reply in short, simple messages, just like a human would in a chat.";
     navigator.clipboard.writeText(promptToCopy).then(() => {
         setCopySuccess(true);
         setTimeout(() => setCopySuccess(false), 2000);
