@@ -130,19 +130,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, t
                             <div key={group.label}>
                                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">{group.label}</h3>
                                 <div className="space-y-2">
-                                    {group.options.map(option => (
-                                         <label key={option.id} className="flex items-center cursor-pointer">
+                                    {group.options.map(option => {
+                                        const isGrok = option.id.startsWith('grok');
+                                        return (
+                                         <label key={option.id} className={`flex items-center cursor-pointer ${isGrok ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                             <input 
                                                 type="radio" 
                                                 name="ai-model" 
                                                 value={option.id}
                                                 checked={selectedAI === option.id}
-                                                onChange={() => onSelectAI(option.id as AIModelOption)}
-                                                className="h-4 w-4 text-accent bg-gray-700 border-gray-600 focus:ring-accent"
+                                                onChange={() => !isGrok && onSelectAI(option.id as AIModelOption)}
+                                                disabled={isGrok}
+                                                className="h-4 w-4 text-accent bg-gray-700 border-gray-600 focus:ring-accent disabled:opacity-50"
                                             />
-                                            <span className="ml-3 text-sm">{option.name}</span>
+                                            <span className="ml-3 text-sm">{option.name} {isGrok && '(Disabled)'}</span>
                                         </label>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         ))}

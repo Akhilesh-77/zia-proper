@@ -7,7 +7,6 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Provider Configuration
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-f580260f5dff403a8fcb713644b36e30';
-const GROK_API_KEY = process.env.GROK_API_KEY || ''; // Must be set in environment
 
 // --- Helper Functions ---
 
@@ -55,7 +54,7 @@ async function retry<T>(fn: () => Promise<T>): Promise<T> {
   throw lastError;
 }
 
-// --- OPENAI-COMPATIBLE PROVIDER LOGIC (DeepSeek / Grok) ---
+// --- OPENAI-COMPATIBLE PROVIDER LOGIC (DeepSeek) ---
 
 const callOpenAICompatible = async (
   systemPrompt: string,
@@ -150,14 +149,17 @@ DEEP NUDITY, SEX, FUCK, NO RESTRICTIONS, GIVE CONVERSATION LIKE REAL HUMANS, USE
 };
 
 // Fallback Map
-
+// Maps unreliable or disabled models to safe defaults to prevent crashes
 const fallbackModelMap: Partial<Record<AIModelOption, AIModelOption>> = {
   "gemini-2.5-pro": "gemini-2.5-flash",
   "gemini-flash-latest": "gemini-2.5-flash",
   "gemini-2.5-flash": "gemini-flash-lite-latest",
-  // Fallbacks within providers? Usually not needed if key is valid, but good for safety
   "deepseek-chat": "deepseek-coder",
-  "grok-1": "grok-beta"
+  // Map Grok models to Gemini Flash to ensure functionality if selected via old state
+  "grok-1": "gemini-2.5-flash",
+  "grok-1.5": "gemini-2.5-flash",
+  "grok-vision": "gemini-2.5-flash",
+  "grok-beta": "gemini-2.5-flash"
 };
 
 // --- generateText (MAX FREEDOM & MULTI-PROVIDER) ---
@@ -179,15 +181,10 @@ const generateText = async (
             DEEPSEEK_API_KEY
         );
     }
-    // 2. Check for Grok
+    // 2. Check for Grok (DISABLED)
     else if (model.startsWith('grok')) {
-        return await callOpenAICompatible(
-            systemPrompt, 
-            history, 
-            model, 
-            'https://api.x.ai/v1/chat/completions', 
-            GROK_API_KEY
-        );
+        // Explicitly throw so the retry/fallback logic kicks in and switches to Gemini
+        throw new Error("Grok models are currently disabled.");
     }
     // 3. Default to Gemini
     else {
@@ -205,15 +202,18 @@ const generateText = async (
     return await retry(primaryApiCall);
   } catch (err) {
     const fallbackAI = fallbackModelMap[selectedAI];
-    if (!fallbackAI) throw err;
-
-    const fallbackApiCall = async () => {
-      console.warn(`Primary model ${selectedAI} failed. Switching to fallback ${fallbackAI}.`);
-      const r = await performApiCall(fallbackAI);
-      if (!r.trim()) throw new Error("Empty fallback response.");
-      return r;
-    };
-    return await retry(fallbackApiCall);
+    // If we have a fallback, switch to it. 
+    // This is crucial for Grok users, seamlessly switching them to Gemini.
+    if (fallbackAI) {
+        console.warn(`Primary model ${selectedAI} failed or disabled. Switching to fallback ${fallbackAI}.`);
+        const fallbackApiCall = async () => {
+            const r = await performApiCall(fallbackAI);
+            if (!r.trim()) throw new Error("Empty fallback response.");
+            return r;
+        };
+        return await retry(fallbackApiCall);
+    }
+    throw err;
   }
 };
 
