@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { BotProfile, AIModelOption, CustomBlock } from '../types';
 import { generateStory, generateScenarioIdea } from '../services/geminiService';
 import FullScreenEditor from './FullScreenEditor';
@@ -15,9 +15,10 @@ interface StoryModePageProps {
 // Internal Collapsible Section Component
 const CollapsibleSection: React.FC<{
     title: string;
+    subtitle?: string;
     children: React.ReactNode;
     defaultExpanded?: boolean;
-}> = ({ title, children, defaultExpanded = false }) => {
+}> = ({ title, subtitle, children, defaultExpanded = false }) => {
     const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
     return (
@@ -25,10 +26,13 @@ const CollapsibleSection: React.FC<{
             <button 
                 type="button"
                 onClick={() => setIsExpanded(!isExpanded)}
-                className="w-full p-4 flex justify-between items-center bg-white/5 hover:bg-white/10 transition-colors"
+                className="w-full p-4 flex justify-between items-center bg-white/5 hover:bg-white/10 transition-colors text-left"
                 aria-expanded={isExpanded}
             >
-                <span className="font-bold text-base text-left">{title}</span>
+                <div>
+                    <span className="font-bold text-base block">{title}</span>
+                    {subtitle && <span className="text-xs text-gray-400 block mt-0.5">{subtitle}</span>}
+                </div>
                 <svg 
                     xmlns="http://www.w3.org/2000/svg" 
                     className={`h-5 w-5 text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} 
@@ -46,7 +50,15 @@ const CollapsibleSection: React.FC<{
     );
 };
 
-const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customBlocks, onSaveBlock, onDeleteBlock }) => {
+interface LocalBlock {
+    id: string;
+    name: string;
+    content: string;
+}
+
+const STORAGE_KEY_BLOCKS = 'zia_custom_copy_blocks_v1';
+
+const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customBlocks: propBlocks, onSaveBlock, onDeleteBlock }) => {
     const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
     const [otherCharacters, setOtherCharacters] = useState('');
     const [scenario, setScenario] = useState('');
@@ -55,11 +67,97 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customB
     const [isSuggesting, setIsSuggesting] = useState(false);
     const [copySuccess, setCopySuccess] = useState(false);
 
-    // Custom Blocks State
-    const [newBlockName, setNewBlockName] = useState('');
-    const [newBlockDesc, setNewBlockDesc] = useState('');
-    const [isAddingBlock, setIsAddingBlock] = useState(false);
+    // --- Custom Copy Blocks Local State ---
+    const [localBlocks, setLocalBlocks] = useState<LocalBlock[]>([]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+    const [blockName, setBlockName] = useState('');
+    const [blockContent, setBlockContent] = useState('');
     const [blockCopyId, setBlockCopyId] = useState<string | null>(null);
+
+    // Load blocks from localStorage on mount
+    useEffect(() => {
+        try {
+            const stored = localStorage.getItem(STORAGE_KEY_BLOCKS);
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed)) {
+                    setLocalBlocks(parsed);
+                }
+            }
+        } catch (e) {
+            console.error("Failed to load local blocks", e);
+        }
+    }, []);
+
+    const saveBlocksToStorage = (blocks: LocalBlock[]) => {
+        try {
+            localStorage.setItem(STORAGE_KEY_BLOCKS, JSON.stringify(blocks));
+        } catch (e) {
+            console.error("Failed to save local blocks", e);
+        }
+    };
+
+    const handleOpenModal = (block?: LocalBlock) => {
+        if (block) {
+            setEditingBlockId(block.id);
+            setBlockName(block.name);
+            setBlockContent(block.content);
+        } else {
+            setEditingBlockId(null);
+            setBlockName('');
+            setBlockContent('');
+        }
+        setIsModalOpen(true);
+    };
+
+    const handleSaveLocalBlock = () => {
+        if (!blockName.trim() || !blockContent.trim()) {
+            alert("Please fill in both name and content.");
+            return;
+        }
+
+        let updatedBlocks: LocalBlock[];
+        
+        if (editingBlockId) {
+            // Update existing
+            updatedBlocks = localBlocks.map(b => 
+                b.id === editingBlockId 
+                ? { ...b, name: blockName, content: blockContent }
+                : b
+            );
+        } else {
+            // Create new
+            const newBlock: LocalBlock = {
+                id: `blk-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                name: blockName,
+                content: blockContent
+            };
+            updatedBlocks = [...localBlocks, newBlock];
+        }
+
+        setLocalBlocks(updatedBlocks);
+        saveBlocksToStorage(updatedBlocks);
+        setIsModalOpen(false);
+        setBlockName('');
+        setBlockContent('');
+        setEditingBlockId(null);
+    };
+
+    const handleDeleteLocalBlock = (id: string) => {
+        if (window.confirm("Delete this block?")) {
+            const updatedBlocks = localBlocks.filter(b => b.id !== id);
+            setLocalBlocks(updatedBlocks);
+            saveBlocksToStorage(updatedBlocks);
+        }
+    };
+
+    const handleCopyLocalBlock = (text: string, id: string) => {
+        navigator.clipboard.writeText(text).then(() => {
+            setBlockCopyId(id);
+            setTimeout(() => setBlockCopyId(null), 1500);
+        }).catch(err => console.error("Copy failed", err));
+    };
 
     const handleToggleBot = (botId: string) => {
         const newSelection = new Set(selectedBotIds);
@@ -80,8 +178,6 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customB
             
             const idea = await generateScenarioIdea(personalities);
             setScenario(idea);
-            // Optional: You could notify the user that the scenario field has been updated
-            // but for now we just update the state.
         } catch (error) {
             console.error(error);
             setScenario('Failed to get an idea. Please try again.');
@@ -129,33 +225,11 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customB
         });
     };
 
-    const handleSaveNewBlock = () => {
-        if(!newBlockName.trim() || !newBlockDesc.trim()) {
-            alert("Name and description required.");
-            return;
-        }
-        onSaveBlock({
-            id: `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            name: newBlockName,
-            description: newBlockDesc
-        });
-        setNewBlockName('');
-        setNewBlockDesc('');
-        setIsAddingBlock(false);
-    }
-
-    const handleCopyBlock = (text: string, id: string) => {
-        navigator.clipboard.writeText(text).then(() => {
-            setBlockCopyId(id);
-            setTimeout(() => setBlockCopyId(null), 1500);
-        });
-    }
-
     const inputClass = "w-full bg-white/10 dark:bg-black/10 p-3 rounded-2xl border border-white/20 dark:border-black/20 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-300 shadow-inner";
     const labelClass = "block text-sm font-medium mb-2";
 
     return (
-        <div className="h-full w-full flex flex-col p-4 bg-light-bg text-light-text dark:bg-dark-bg dark:text-dark-text">
+        <div className="h-full w-full flex flex-col p-4 bg-light-bg text-light-text dark:bg-dark-bg dark:text-dark-text relative">
             <header className="flex items-center mb-6 gap-2">
                 <img src="https://i.postimg.cc/qRB2Gnw2/Gemini-Generated-Image-vfkohrvfkohrvfko-1.png" alt="Zia.ai Logo" className="h-8 w-8"/>
                 <h1 className="text-3xl font-bold">Story Mode ✨</h1>
@@ -239,7 +313,7 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customB
                     )}
                 </CollapsibleSection>
 
-                {/* Generated Result (Always Visible if exists) */}
+                {/* Generated Result */}
                 {generatedStory && (
                     <div className="animate-fadeIn space-y-4 mt-6 border-t border-white/10 pt-6">
                         <h2 className="text-xl font-semibold">Generated Story</h2>
@@ -252,76 +326,128 @@ const StoryModePage: React.FC<StoryModePageProps> = ({ bots, selectedAI, customB
                     </div>
                 )}
                 
-                {/* CUSTOM COPY BLOCKS */}
-                <div className="pt-8 mt-4 border-t border-white/10">
-                    <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-xl font-bold">Custom Copy Blocks</h2>
-                        <button onClick={() => setIsAddingBlock(!isAddingBlock)} className="p-2 bg-white/10 rounded-full hover:bg-white/20 text-accent transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                {/* ----------------------------- */}
+                {/* NEW: CUSTOM COPY BLOCKS (v1)  */}
+                {/* ----------------------------- */}
+                <div className="pt-4">
+                    <CollapsibleSection 
+                        title="Custom Copy Blocks" 
+                        subtitle="Reusable text blocks you can edit & copy anytime."
+                        defaultExpanded={false}
+                    >
+                         <button 
+                            onClick={() => handleOpenModal()} 
+                            className="w-full mb-4 py-3 bg-white/5 border border-dashed border-white/30 rounded-xl text-gray-300 hover:bg-white/10 hover:text-white transition-all flex items-center justify-center gap-2"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                            </svg>
+                            Add Block
                         </button>
-                    </div>
-                    
-                    {isAddingBlock && (
-                        <div className="bg-white/5 p-4 rounded-xl mb-4 animate-fadeIn">
-                            <input 
-                                type="text" 
-                                placeholder="Block Name (e.g. My Intro)" 
-                                value={newBlockName} 
-                                onChange={e => setNewBlockName(e.target.value)} 
-                                className={`${inputClass} mb-2`}
-                            />
-                            <textarea 
-                                placeholder="Text to copy..." 
-                                value={newBlockDesc} 
-                                onChange={e => setNewBlockDesc(e.target.value)} 
-                                className={`${inputClass} mb-2`}
-                                rows={3}
-                            />
-                            <div className="flex gap-2">
-                                <button onClick={() => setIsAddingBlock(false)} className="flex-1 py-2 bg-gray-600 rounded-lg text-white hover:bg-gray-500 transition-colors">Cancel</button>
-                                <button onClick={handleSaveNewBlock} className="flex-1 py-2 bg-accent rounded-lg text-white font-bold hover:bg-accent/80 transition-colors">Save Block</button>
-                            </div>
-                        </div>
-                    )}
-                    
-                    <div className="space-y-3">
-                        {customBlocks && customBlocks.length > 0 ? (
-                            customBlocks.map(block => (
-                                <div key={block.id} className="bg-white/5 p-3 rounded-xl flex flex-col gap-2 group border border-white/5 hover:bg-white/10 transition-colors">
-                                    <div className="flex justify-between items-start">
-                                        <h3 className="font-bold text-base">{block.name}</h3>
-                                        <div className="flex gap-2">
-                                            <button 
-                                                onClick={() => handleCopyBlock(block.description, block.id)} 
-                                                className="p-2 bg-accent/20 rounded-lg hover:bg-accent/40 text-accent transition-colors"
-                                                title="Copy Text"
-                                            >
-                                                {blockCopyId === block.id ? (
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                                                ) : (
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-                                                )}
-                                            </button>
-                                            <button 
-                                                onClick={() => onDeleteBlock(block.id)}
-                                                className="p-2 bg-red-500/20 rounded-lg hover:bg-red-500/40 text-red-500 transition-colors"
-                                                title="Delete Block"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                            </button>
+
+                        <div className="space-y-3">
+                            {localBlocks.length > 0 ? (
+                                localBlocks.map(block => (
+                                    <div key={block.id} className="bg-white/5 p-4 rounded-xl border border-white/5 hover:border-white/20 transition-all group">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <h3 className="font-bold text-base text-white">{block.name}</h3>
+                                            <div className="flex gap-1">
+                                                {/* Edit */}
+                                                <button 
+                                                    onClick={() => handleOpenModal(block)}
+                                                    className="p-2 text-gray-400 hover:text-accent hover:bg-white/10 rounded-lg transition-colors"
+                                                    title="Edit"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z" /></svg>
+                                                </button>
+                                                {/* Copy */}
+                                                <button 
+                                                    onClick={() => handleCopyLocalBlock(block.content, block.id)}
+                                                    className={`p-2 rounded-lg transition-colors ${blockCopyId === block.id ? 'text-green-400 bg-green-400/10' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+                                                    title="Copy"
+                                                >
+                                                    {blockCopyId === block.id ? (
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                                                    ) : (
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                                                    )}
+                                                </button>
+                                                {/* Delete */}
+                                                <button 
+                                                    onClick={() => handleDeleteLocalBlock(block.id)}
+                                                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                    title="Delete"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="bg-black/20 p-3 rounded-lg text-sm text-gray-300 font-mono whitespace-pre-wrap max-h-32 overflow-hidden relative">
+                                            {block.content}
+                                            <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-black/20 to-transparent pointer-events-none"></div>
                                         </div>
                                     </div>
-                                    <div className="bg-black/20 p-2 rounded-lg text-sm text-gray-400 max-h-24 overflow-y-auto whitespace-pre-wrap border border-white/5 custom-scrollbar">
-                                        {block.description}
-                                    </div>
+                                ))
+                            ) : (
+                                <div className="text-center py-6 text-gray-500 italic">
+                                    No custom blocks yet. Tap + to add one.
                                 </div>
-                            ))
-                        ) : (
-                            <p className="text-gray-500 text-center italic text-sm">No custom blocks yet. Tap + to add one.</p>
-                        )}
+                            )}
+                        </div>
+                    </CollapsibleSection>
+                </div>
+
+            </main>
+
+            {/* ADD/EDIT MODAL OVERLAY */}
+            {isModalOpen && (
+                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 animate-fadeIn" onClick={() => setIsModalOpen(false)}>
+                    <div 
+                        className="bg-dark-bg w-full max-w-sm rounded-2xl p-6 shadow-2xl border border-white/10"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h3 className="text-xl font-bold mb-4">{editingBlockId ? 'Edit Block' : 'Add New Block'}</h3>
+                        
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-1 text-gray-400">Block Name</label>
+                                <input 
+                                    type="text" 
+                                    value={blockName} 
+                                    onChange={e => setBlockName(e.target.value)}
+                                    placeholder="e.g. Intro, Disclaimer..."
+                                    className="w-full bg-white/10 rounded-xl p-3 border border-white/10 focus:ring-2 focus:ring-accent focus:outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1 text-gray-400">Block Content</label>
+                                <textarea 
+                                    value={blockContent} 
+                                    onChange={e => setBlockContent(e.target.value)}
+                                    placeholder="Type or paste text here..."
+                                    rows={5}
+                                    className="w-full bg-white/10 rounded-xl p-3 border border-white/10 focus:ring-2 focus:ring-accent focus:outline-none resize-none"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 mt-6">
+                            <button 
+                                onClick={() => setIsModalOpen(false)}
+                                className="flex-1 py-3 bg-gray-700 rounded-xl font-bold text-gray-300 hover:bg-gray-600 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={handleSaveLocalBlock}
+                                className="flex-1 py-3 bg-accent rounded-xl font-bold text-white hover:bg-accent/80 transition-colors"
+                            >
+                                Save
+                            </button>
+                        </div>
                     </div>
                 </div>
-            </main>
+            )}
         </div>
     );
 };

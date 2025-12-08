@@ -9,26 +9,37 @@ interface PhotoGalleryPageProps {
 
 // Helper for preloading images
 const preloadImage = (src: string) => {
-    const img = new Image();
-    img.src = src;
+    try {
+        const img = new Image();
+        img.src = src;
+    } catch (e) {
+        // Silently fail if preload fails to avoid interruption
+    }
 };
 
 const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
     // --- 1. Data Preparation ---
+    // FIX: Prioritize CROPPED images over original images as requested.
     const images = React.useMemo(() => {
         const list: string[] = [];
-        if (bot.originalChatBackground) list.push(bot.originalChatBackground);
-        else if (bot.chatBackground) list.push(bot.chatBackground);
         
-        if (bot.originalPhoto) list.push(bot.originalPhoto);
-        else if (bot.photo) list.push(bot.photo);
+        // Background
+        if (bot.chatBackground) list.push(bot.chatBackground);
+        else if (bot.originalChatBackground) list.push(bot.originalChatBackground);
         
-        if (bot.originalGalleryImages && bot.originalGalleryImages.length > 0) {
-            list.push(...bot.originalGalleryImages);
-        } else if (bot.galleryImages && bot.galleryImages.length > 0) {
+        // Profile Photo
+        if (bot.photo) list.push(bot.photo);
+        else if (bot.originalPhoto) list.push(bot.originalPhoto);
+        
+        // Gallery Images (Prioritize the cropped/edited list)
+        if (bot.galleryImages && bot.galleryImages.length > 0) {
             list.push(...bot.galleryImages);
+        } else if (bot.originalGalleryImages && bot.originalGalleryImages.length > 0) {
+            list.push(...bot.originalGalleryImages);
         }
-        return Array.from(new Set(list));
+        
+        // Filter out nulls/undefined and duplicates
+        return Array.from(new Set(list)).filter(Boolean);
     }, [bot]);
 
     // --- 2. State Management ---
@@ -107,15 +118,8 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
         return Math.hypot(p1.x - p2.x, p1.y - p2.y);
     };
 
-    const getCenter = (p1: { x: number, y: number }, p2: { x: number, y: number }) => {
-        return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
-    };
-
     const handleTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
         try {
-            // Prevent default browser zooming behavior logic if needed, 
-            // but usually handled by CSS touch-action: none.
-            
             // Normalize mouse vs touch
             const points: { id: number, x: number, y: number }[] = [];
             if ('touches' in e) {
@@ -139,7 +143,6 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
                 gesture.current.isPinching = true;
                 gesture.current.startDist = getDistance(pArr[0], pArr[1]);
                 gesture.current.startScale = scale;
-                // Could store center for zoom-to-point, simplified to center zoom for stability
             } else if (gesture.current.pointers.size === 1) {
                 // PAN or SWIPE START
                 const p = points[0];
@@ -164,7 +167,6 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
                     points.push({ id: e.touches[i].identifier, x: e.touches[i].clientX, y: e.touches[i].clientY });
                 }
             } else {
-                 // Only process mouse move if dragging
                 if (!isDragging) return;
                 points.push({ id: 999, x: (e as React.MouseEvent).clientX, y: (e as React.MouseEvent).clientY });
             }
@@ -186,7 +188,6 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
 
                 if (scale > 1) {
                     // PANNING
-                    // Add smooth friction if out of bounds (simplified)
                     setTranslate({
                         x: gesture.current.initialTranslateX + dx,
                         y: gesture.current.initialTranslateY + dy
@@ -217,15 +218,12 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
                 
                 if (scale > 1) {
                     // END ZOOM/PAN
-                    // Simple boundary snap-back could go here. 
-                    // For now, if scale < 1 (from pinch out), reset to 1.
                     if (scale < 1) setScale(1);
                 } else {
                     // END SWIPE
                     const dt = Date.now() - gesture.current.startTime;
                     const dx = swipeOffset;
                     
-                    // Threshold: Move if swipe is fast enough OR far enough
                     const isFling = dt < 300 && Math.abs(dx) > 30;
                     const isDragFar = Math.abs(dx) > window.innerWidth / 3;
 
@@ -235,21 +233,16 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
                         } else if (dx < 0 && currentIndex < images.length - 1) {
                             nextImage();
                         } else {
-                            // Rebound (edge case or not enough swipe)
                             setSwipeOffset(0);
                         }
                     } else {
                         // Reset if no significant action
-                        // Tap detection: if barely moved and short duration
                         if (Math.abs(dx) < 5 && dt < 200) {
                             setUiVisible(prev => !prev);
                         }
                         setSwipeOffset(0);
                     }
                 }
-            } else {
-                // If fingers remain, reset start points for the remaining fingers to prevent jumping
-                // Simplified: do nothing, let next move update naturally or reset on full lift
             }
         } catch (err) {
             console.error("Gesture End Error", err);
@@ -259,10 +252,6 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
 
     if (images.length === 0) return null;
 
-    // Calculate carousel transform
-    // We render 3 images: prev, current, next (virtualized logic visually)
-    // Actually simpler to just translate the current one with offset, and use keys to switch
-    
     return (
         <div 
             className={`fixed inset-0 z-50 flex items-center justify-center bg-black transition-opacity duration-300 ease-out overflow-hidden touch-none ${isMounted && !isExiting ? 'bg-opacity-100' : 'bg-opacity-0'}`}
@@ -282,11 +271,6 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
                 <div 
                     className={`w-full h-full flex items-center justify-center transition-transform duration-300 ease-out ${isMounted && !isExiting ? 'scale-100 opacity-100' : 'scale-90 opacity-0'}`}
                 >
-                    {/* 
-                       We apply the SWIPE transform to a wrapper, 
-                       and the ZOOM/PAN transform to the image itself.
-                       This separates the physics.
-                    */}
                     <div 
                         className="relative w-full h-full flex items-center justify-center will-change-transform"
                         style={{ 
@@ -294,7 +278,7 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
                             transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)' 
                         }}
                     >
-                        {/* Current Image */}
+                        {/* Current Image (Showing Cropped Version if available) */}
                         <img 
                             src={images[currentIndex]} 
                             alt="Gallery View" 
@@ -306,15 +290,7 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
                             }}
                         />
                         
-                        {/* Preload / Ghost Images for visual continuity during swipe (Optional Optimization) */}
-                        {/* 
-                            For a true carousel feel, we'd position absolute images left/right. 
-                            Given specific requirement for "infinite swipe" (which usually means looping), 
-                            or standard swipe. The prompt asked for "infinite swipe" in previous prompts 
-                            but "Elastic overscroll" in this one. We stick to Elastic Overscroll for ends 
-                            as implemented in logic above, or infinite if we wrap indices.
-                            Let's implement visual neighbors for smoothness.
-                        */}
+                        {/* Preload Neighbors for smooth swipe */}
                         {currentIndex > 0 && (
                              <img 
                                 src={images[currentIndex - 1]} 
@@ -337,26 +313,25 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
 
             {/* UI OVERLAY */}
             <div 
-                className={`absolute top-0 left-0 right-0 p-4 flex justify-between items-center transition-all duration-300 z-20 ${uiVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'}`}
-                style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.8), transparent)' }}
+                className={`absolute top-0 left-0 right-0 p-4 flex justify-end items-center transition-all duration-300 z-20 pointer-events-none ${uiVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'}`}
+                style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.6), transparent)' }}
             >
+                {/* FIX: Back Button moved to Top Right, removed counter text */}
                 <button 
                     onClick={handleExit} 
-                    className="p-2 rounded-full bg-white/10 text-white backdrop-blur-md hover:bg-white/20 transition-colors"
+                    className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/60 transition-colors pointer-events-auto"
+                    aria-label="Close Viewer"
                 >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                 </button>
-                <div className="text-white font-medium text-sm drop-shadow-md bg-black/30 px-3 py-1 rounded-full backdrop-blur-md border border-white/10">
-                    {currentIndex + 1} / {images.length}
-                </div>
-                {/* Placeholder for symmetry or extra actions */}
-                <div className="w-10"></div>
             </div>
 
-            {/* Bottom UI (Optional thumb strip could go here, simply hidden for cleaner look) */}
+            {/* Bottom UI Instructions */}
             <div 
-                 className={`absolute bottom-0 left-0 right-0 p-6 flex justify-center transition-all duration-300 z-20 ${uiVisible ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'}`}
-                 style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}
+                 className={`absolute bottom-0 left-0 right-0 p-6 flex justify-center transition-all duration-300 z-20 pointer-events-none ${uiVisible ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'}`}
+                 style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.6), transparent)' }}
             >
                 <p className="text-white/70 text-xs">Swipe to browse • Pinch to zoom</p>
             </div>

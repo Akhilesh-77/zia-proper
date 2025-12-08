@@ -175,6 +175,9 @@ const App: React.FC = () => {
         case '#story':
           setCurrentPage('story');
           break;
+        case '#storymode': // Alias for story page
+          setCurrentPage('story');
+          break;
         case '#code':
           setCurrentPage('code');
           break;
