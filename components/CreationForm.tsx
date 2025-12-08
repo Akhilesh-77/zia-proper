@@ -52,15 +52,10 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
         const key = getDraftKey();
         const savedDraft = await localforage.getItem(key);
         if (savedDraft && typeof savedDraft === 'string' && savedDraft.trim() !== '') {
-          // Only use draft if personality is currently empty or strictly equals the initial load
-          // This prevents overwriting if we navigated away and back quickly
           setPersonality((prev) => {
-             // If we are editing and the prev value matches the bot's saved value, 
-             // but we have a different draft, assume the draft is newer work.
              if (isEditing && botToEdit && prev === botToEdit.personality && savedDraft !== prev) {
                  return savedDraft;
              }
-             // If new bot and empty, use draft
              if (!isEditing && !prev) {
                  return savedDraft;
              }
@@ -85,7 +80,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
       } catch (e) {
         console.error("Failed to save draft personality", e);
       }
-    }, 1000); // Save after 1 second of no typing
+    }, 1000);
 
     return () => clearTimeout(timer);
   }, [personality, getDraftKey]);
@@ -95,8 +90,6 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
     if (isEditing) {
       setName(botToEdit.name);
       setDescription(botToEdit.description);
-      // Logic inside loadDraft handles personality, but we set initial state here too just in case
-      // If loadDraft runs after, it will check conditions.
       setPersonality(prev => prev || botToEdit.personality);
       
       setPhoto(botToEdit.photo);
@@ -108,18 +101,16 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
       setGalleryImages(botToEdit.galleryImages || []);
       setOriginalGalleryImages(botToEdit.originalGalleryImages || botToEdit.galleryImages || []);
       
-      // Load New Fields or Fallback
       if (botToEdit.conversationMode) {
           setConversationMode(botToEdit.conversationMode);
       } else {
-          // Backward compatibility: If isSpicy was true, set to spicy. Else normal.
           setConversationMode(botToEdit.isSpicy ? 'spicy' : 'normal');
       }
       
       if (botToEdit.gender) {
           setGender(botToEdit.gender);
       } else {
-          setGender('female'); // Default to female for legacy bots
+          setGender('female');
       }
     }
   }, [botToEdit, isEditing]);
@@ -127,14 +118,13 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fileType: 'photo' | 'gif' | 'background' | 'gallery') => {
     if (e.target.files) {
       if (fileType === 'gallery') {
-         // Handle multiple images
          const files = Array.from(e.target.files);
          files.forEach(file => {
              const reader = new FileReader();
              reader.onload = (event) => {
                  try {
                      const result = event.target?.result as string;
-                     // Store exact original base64 without compression
+                     // Only append for NEW uploads
                      setGalleryImages(prev => [...prev, result]);
                      setOriginalGalleryImages(prev => [...prev, result]);
                  } catch (err) {
@@ -144,13 +134,11 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
              reader.readAsDataURL(file);
          });
       } else if (e.target.files[0]) {
-        // Handle single image
         const reader = new FileReader();
         reader.onload = (event) => {
           try {
               const result = event.target?.result as string;
                if (fileType === 'background' || fileType === 'photo') {
-                  // Open cropper modal but also store original immediately
                   setImageToCrop({ src: result, type: fileType }); 
                } else {
                   setGif(result);
@@ -172,8 +160,10 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
   const openGalleryCropper = (index: number) => {
       try {
           // Prefer the original image for cropping to maintain max quality
+          // Fallback to current gallery image if original is missing
           const img = originalGalleryImages[index] || galleryImages[index];
           if (img) {
+              // Pass the INDEX so we know exactly which one to replace
               setImageToCrop({ src: img, type: 'gallery', index });
           }
       } catch (err) {
@@ -199,7 +189,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
         chatBackground, 
         originalChatBackground,
         personaId: botToEdit?.personaId, 
-        isSpicy: conversationMode === 'spicy' || conversationMode === 'extreme', // sync for legacy
+        isSpicy: conversationMode === 'spicy' || conversationMode === 'extreme',
         conversationMode,
         gender,
         chatBackgroundBrightness: botToEdit?.chatBackgroundBrightness,
@@ -213,7 +203,6 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
         onSaveBot(botData);
     }
 
-    // Clear draft on successful save
     try {
         const key = getDraftKey();
         await localforage.removeItem(key);
@@ -253,26 +242,27 @@ ${personality}`;
                 outputShape={'rectangle'}
                 onClose={() => setImageToCrop(null)}
                 onCropComplete={(croppedImage) => {
-                    // Safety check if state was cleared unexpectedly
+                    // Safety check
                     if (!imageToCrop) return;
 
                     if (imageToCrop.type === 'photo') {
                         setPhoto(croppedImage);
-                        // Store the EXACT original base64
                         setOriginalPhoto(imageToCrop.src); 
                     } else if (imageToCrop.type === 'background') {
                         setChatBackground(croppedImage);
-                        // Store the EXACT original base64
                         setOriginalChatBackground(imageToCrop.src);
                     } else if (imageToCrop.type === 'gallery' && typeof imageToCrop.index === 'number') {
-                        // FIX: Ensure we only replace the item at the specific index.
-                        // We do NOT update originalGalleryImages here, preserving the master copy.
+                        // CRITICAL FIX: Strictly replace the image at the specific index.
+                        // Do NOT use push/append.
                         setGalleryImages(prev => {
-                            if (imageToCrop.index! >= prev.length) return prev; // Boundary check
+                            if (imageToCrop.index! < 0 || imageToCrop.index! >= prev.length) return prev;
                             const newImages = [...prev];
                             newImages[imageToCrop.index!] = croppedImage;
                             return newImages;
                         });
+                        // Note: We do NOT update originalGalleryImages here. 
+                        // We keep the original raw file in originalGalleryImages[index] 
+                        // so the user can re-crop from the source later if they want.
                     }
                     setImageToCrop(null);
                 }}

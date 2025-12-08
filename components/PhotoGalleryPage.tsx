@@ -7,15 +7,128 @@ interface PhotoGalleryPageProps {
     onBack: () => void;
 }
 
-// Helper for preloading images to prevent flickering
-const preloadImage = (src: string) => {
-    try {
-        const img = new Image();
-        img.src = src;
-    } catch (e) {
-        // Ignore preload errors
-    }
-};
+// --- Internal Component for Individual Zoomable Image ---
+const GalleryItem: React.FC<{ src: string }> = ({ src }) => {
+    const [scale, setScale] = useState(1);
+    const [translate, setTranslate] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+
+    // Refs for gesture calculations
+    const gesture = useRef({
+        startX: 0,
+        startY: 0,
+        startDist: 0,
+        startScale: 1,
+        initialTranslateX: 0,
+        initialTranslateY: 0,
+        pointers: new Map<number, { x: number, y: number }>(),
+    });
+
+    const getDistance = (p1: { x: number, y: number }, p2: { x: number, y: number }) => {
+        return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    };
+
+    const handleTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
+        try {
+            const points: { id: number, x: number, y: number }[] = [];
+            if ('touches' in e) {
+                for (let i = 0; i < e.touches.length; i++) {
+                    points.push({ id: e.touches[i].identifier, x: e.touches[i].clientX, y: e.touches[i].clientY });
+                }
+            } else {
+                points.push({ id: 999, x: (e as React.MouseEvent).clientX, y: (e as React.MouseEvent).clientY });
+            }
+
+            points.forEach(p => gesture.current.pointers.set(p.id, p));
+            setIsDragging(true);
+
+            if (gesture.current.pointers.size === 2) {
+                // Pinch Start
+                const pArr = Array.from(gesture.current.pointers.values());
+                gesture.current.startDist = getDistance(pArr[0], pArr[1]);
+                gesture.current.startScale = scale;
+            } else if (gesture.current.pointers.size === 1) {
+                // Pan Start
+                const p = points[0];
+                gesture.current.startX = p.x;
+                gesture.current.startY = p.y;
+                gesture.current.initialTranslateX = translate.x;
+                gesture.current.initialTranslateY = translate.y;
+            }
+        } catch (err) { console.error(err); }
+    };
+
+    const handleTouchMove = (e: React.TouchEvent | React.MouseEvent) => {
+        try {
+            const points: { id: number, x: number, y: number }[] = [];
+            if ('touches' in e) {
+                for (let i = 0; i < e.touches.length; i++) {
+                    points.push({ id: e.touches[i].identifier, x: e.touches[i].clientX, y: e.touches[i].clientY });
+                }
+            } else {
+                if (!isDragging) return;
+                points.push({ id: 999, x: (e as React.MouseEvent).clientX, y: (e as React.MouseEvent).clientY });
+            }
+
+            points.forEach(p => gesture.current.pointers.set(p.id, p));
+            const pArr = Array.from(gesture.current.pointers.values());
+
+            if (pArr.length === 2) {
+                // Zooming
+                const dist = getDistance(pArr[0], pArr[1]);
+                if (gesture.current.startDist > 0) {
+                    const newScale = Math.max(1, Math.min(gesture.current.startScale * (dist / gesture.current.startDist), 5));
+                    setScale(newScale);
+                }
+            } else if (pArr.length === 1 && scale > 1) {
+                // Panning (only when zoomed in)
+                const dx = pArr[0].x - gesture.current.startX;
+                const dy = pArr[0].y - gesture.current.startY;
+                setTranslate({
+                    x: gesture.current.initialTranslateX + dx,
+                    y: gesture.current.initialTranslateY + dy
+                });
+            }
+        } catch (err) { console.error(err); }
+    };
+
+    const handleTouchEnd = (e: React.TouchEvent | React.MouseEvent) => {
+        setIsDragging(false);
+        gesture.current.pointers.clear();
+        if (scale < 1) {
+            setScale(1);
+            setTranslate({ x: 0, y: 0 });
+        }
+    };
+
+    return (
+        <div 
+            className="flex-shrink-0 w-full h-full flex items-center justify-center overflow-hidden"
+            style={{ 
+                // Allow scrolling only if not zoomed
+                touchAction: scale > 1 ? 'none' : 'pan-x'
+            }}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onMouseDown={handleTouchStart}
+            onMouseMove={handleTouchMove}
+            onMouseUp={handleTouchEnd}
+            onMouseLeave={handleTouchEnd}
+        >
+             <img 
+                src={src} 
+                alt="Gallery"
+                className="w-full h-full object-contain select-none pointer-events-none will-change-transform"
+                draggable={false}
+                style={{
+                    transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
+                    transition: isDragging ? 'none' : 'transform 0.2s ease-out'
+                }}
+            />
+        </div>
+    )
+}
 
 const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
     // --- 1. Image List Preparation (Safe & Prioritizing Crops) ---
@@ -52,186 +165,24 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
     }, [bot]);
 
     // --- 2. State ---
-    const [currentIndex, setCurrentIndex] = useState(0);
     const [isMounted, setIsMounted] = useState(false);
     const [isExiting, setIsExiting] = useState(false);
 
-    // Transform State
-    const [scale, setScale] = useState(1);
-    const [translate, setTranslate] = useState({ x: 0, y: 0 });
-    const [swipeOffset, setSwipeOffset] = useState(0);
-    const [isDragging, setIsDragging] = useState(false);
-
-    // --- 3. Refs for Gesture Logic ---
-    const gesture = useRef({
-        startX: 0,
-        startY: 0,
-        startDist: 0,
-        startScale: 1,
-        initialTranslateX: 0,
-        initialTranslateY: 0,
-        pointers: new Map<number, { x: number, y: number }>(),
-        isPinching: false,
-        startTime: 0,
-    });
-
-    // --- 4. Lifecycle ---
+    // --- 3. Lifecycle ---
     useEffect(() => {
         requestAnimationFrame(() => setIsMounted(true));
-        // Preload adjacent images
-        if (images[currentIndex + 1]) preloadImage(images[currentIndex + 1]);
-        if (images[currentIndex - 1]) preloadImage(images[currentIndex - 1]);
-    }, [currentIndex, images]);
+    }, []);
 
-    // --- 5. Navigation & Reset ---
+    // --- 4. Navigation ---
     const handleClose = useCallback(() => {
         setIsExiting(true);
         setTimeout(onBack, 300);
     }, [onBack]);
 
-    const resetTransform = () => {
-        setScale(1);
-        setTranslate({ x: 0, y: 0 });
-        setSwipeOffset(0);
-    };
-
-    const nextImage = useCallback(() => {
-        if (currentIndex < images.length - 1) {
-            setCurrentIndex(prev => prev + 1);
-            resetTransform();
-        } else {
-            setSwipeOffset(0); // Snap back if at end
-        }
-    }, [currentIndex, images.length]);
-
-    const prevImage = useCallback(() => {
-        if (currentIndex > 0) {
-            setCurrentIndex(prev => prev - 1);
-            resetTransform();
-        } else {
-            setSwipeOffset(0); // Snap back if at start
-        }
-    }, [currentIndex]);
-
-    // --- 6. Gesture Handlers ---
-    const getDistance = (p1: { x: number, y: number }, p2: { x: number, y: number }) => {
-        return Math.hypot(p1.x - p2.x, p1.y - p2.y);
-    };
-
-    const handleTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
-        try {
-            const points: { id: number, x: number, y: number }[] = [];
-            if ('touches' in e) {
-                for (let i = 0; i < e.touches.length; i++) {
-                    points.push({ id: e.touches[i].identifier, x: e.touches[i].clientX, y: e.touches[i].clientY });
-                }
-            } else {
-                points.push({ id: 999, x: (e as React.MouseEvent).clientX, y: (e as React.MouseEvent).clientY });
-            }
-
-            gesture.current.pointers.clear();
-            points.forEach(p => gesture.current.pointers.set(p.id, p));
-            gesture.current.startTime = Date.now();
-            setIsDragging(true);
-
-            if (gesture.current.pointers.size === 2) {
-                // Pinch Start
-                const pArr = Array.from(gesture.current.pointers.values());
-                gesture.current.isPinching = true;
-                gesture.current.startDist = getDistance(pArr[0], pArr[1]);
-                gesture.current.startScale = scale;
-            } else if (gesture.current.pointers.size === 1) {
-                // Pan/Swipe Start
-                const p = points[0];
-                gesture.current.startX = p.x;
-                gesture.current.startY = p.y;
-                gesture.current.initialTranslateX = translate.x;
-                gesture.current.initialTranslateY = translate.y;
-            }
-        } catch (err) { console.error(err); }
-    };
-
-    const handleTouchMove = (e: React.TouchEvent | React.MouseEvent) => {
-        try {
-             const points: { id: number, x: number, y: number }[] = [];
-            if ('touches' in e) {
-                for (let i = 0; i < e.touches.length; i++) {
-                    points.push({ id: e.touches[i].identifier, x: e.touches[i].clientX, y: e.touches[i].clientY });
-                }
-            } else {
-                if (!isDragging) return;
-                points.push({ id: 999, x: (e as React.MouseEvent).clientX, y: (e as React.MouseEvent).clientY });
-            }
-
-            points.forEach(p => gesture.current.pointers.set(p.id, p));
-            const pArr = Array.from(gesture.current.pointers.values());
-
-            if (gesture.current.isPinching && pArr.length === 2) {
-                // Zooming
-                const dist = getDistance(pArr[0], pArr[1]);
-                if (gesture.current.startDist > 0) {
-                    const newScale = Math.max(1, Math.min(gesture.current.startScale * (dist / gesture.current.startDist), 5));
-                    setScale(newScale);
-                }
-            } else if (pArr.length === 1) {
-                const dx = pArr[0].x - gesture.current.startX;
-                const dy = pArr[0].y - gesture.current.startY;
-
-                if (scale > 1) {
-                    // Panning (only when zoomed in)
-                    setTranslate({
-                        x: gesture.current.initialTranslateX + dx,
-                        y: gesture.current.initialTranslateY + dy
-                    });
-                } else {
-                    // Swiping (only when scale is 1)
-                    // Add resistance at edges
-                    let effectiveDx = dx;
-                    if ((currentIndex === 0 && dx > 0) || (currentIndex === images.length - 1 && dx < 0)) {
-                        effectiveDx = dx * 0.4;
-                    }
-                    setSwipeOffset(effectiveDx);
-                }
-            }
-        } catch (err) { console.error(err); }
-    };
-
-    const handleTouchEnd = (e: React.TouchEvent | React.MouseEvent) => {
-        try {
-            setIsDragging(false);
-            const pCount = 'touches' in e ? e.touches.length : 0;
-            
-            if (pCount === 0) {
-                gesture.current.isPinching = false;
-                
-                if (scale > 1) {
-                    // Check bounds for panning could go here, but for now just prevent scale < 1
-                    if (scale < 1) setScale(1);
-                } else {
-                    // Handle Swipe completion
-                    const dt = Date.now() - gesture.current.startTime;
-                    const dx = swipeOffset;
-                    const isFling = dt < 300 && Math.abs(dx) > 40;
-                    const isDragFar = Math.abs(dx) > window.innerWidth / 3;
-
-                    if ((isFling || isDragFar) && Math.abs(dx) > 0) {
-                        if (dx > 0) prevImage();
-                        else nextImage();
-                    } else {
-                        setSwipeOffset(0); // Snap back
-                    }
-                }
-            }
-        } catch (err) { 
-            console.error(err);
-            setSwipeOffset(0);
-        }
-    };
-
     if (!images || images.length === 0) return null;
 
     return (
-        <div className={`fixed inset-0 z-[60] bg-black flex items-center justify-center overflow-hidden touch-none transition-opacity duration-300 ${isMounted && !isExiting ? 'opacity-100' : 'opacity-0'}`}>
+        <div className={`fixed inset-0 z-[60] bg-black flex items-center justify-center transition-opacity duration-300 ${isMounted && !isExiting ? 'opacity-100' : 'opacity-0'}`}>
             
             {/* CLOSE BUTTON - Top Right */}
             <button 
@@ -244,38 +195,11 @@ const PhotoGalleryPage: React.FC<PhotoGalleryPageProps> = ({ bot, onBack }) => {
                 </svg>
             </button>
 
-            {/* GESTURE AREA */}
-            <div 
-                className="absolute inset-0 w-full h-full flex items-center justify-center"
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
-                onMouseDown={handleTouchStart}
-                onMouseMove={handleTouchMove}
-                onMouseUp={handleTouchEnd}
-                onMouseLeave={handleTouchEnd}
-            >
-                {/* IMAGE WRAPPER (Handles Swipe Translate) */}
-                <div 
-                    className="w-full h-full flex items-center justify-center will-change-transform"
-                    style={{
-                        transform: `translateX(${swipeOffset}px)`,
-                        transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)'
-                    }}
-                >
-                    {/* IMAGE (Handles Scale & Pan Translate) */}
-                    {/* UPDATED: w-full h-full object-contain ensures it fills the screen bounds without cropping/cover */}
-                    <img 
-                        src={images[currentIndex]} 
-                        alt="Gallery"
-                        className="w-full h-full object-contain select-none pointer-events-none will-change-transform"
-                        draggable={false}
-                        style={{
-                            transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
-                            transition: isDragging && scale > 1 ? 'none' : 'transform 0.2s ease-out'
-                        }}
-                    />
-                </div>
+            {/* SCROLL CONTAINER (Native Horizontal Scroll) */}
+            <div className="w-full h-full flex flex-row overflow-x-auto overflow-y-hidden snap-none no-scrollbar touch-pan-x">
+                {images.map((src, index) => (
+                    <GalleryItem key={index} src={src} />
+                ))}
             </div>
         </div>
     );
