@@ -468,7 +468,7 @@ const App: React.FC = () => {
         }
         return null;
       case 'version':
-          return <VersionPage />;
+          return <VersionPage onBack={() => window.location.hash = '#home'} />;
       default:
         return null;
     }
