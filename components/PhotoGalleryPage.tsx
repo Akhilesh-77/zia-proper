@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { BotProfile } from '../types';
 
@@ -44,7 +43,7 @@ const GalleryItem: React.FC<{ src: string }> = ({ src }) => {
 
             if (gesture.current.pointers.size === 2) {
                 // Pinch Start
-                const pArr = Array.from(gesture.current.pointers.values());
+                const pArr: { x: number, y: number }[] = Array.from(gesture.current.pointers.values());
                 gesture.current.startDist = getDistance(pArr[0], pArr[1]);
                 gesture.current.startScale = scale;
             } else if (gesture.current.pointers.size === 1) {
@@ -71,7 +70,7 @@ const GalleryItem: React.FC<{ src: string }> = ({ src }) => {
             }
 
             points.forEach(p => gesture.current.pointers.set(p.id, p));
-            const pArr = Array.from(gesture.current.pointers.values());
+            const pArr: { x: number, y: number }[] = Array.from(gesture.current.pointers.values());
 
             if (pArr.length === 2) {
                 // Zooming

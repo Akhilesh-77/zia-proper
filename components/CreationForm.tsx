@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import type { BotProfile, ConversationMode, BotGender } from '../types';
 import ImageCropper from './ImageCropper';
@@ -118,7 +117,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fileType: 'photo' | 'gif' | 'background' | 'gallery') => {
     if (e.target.files) {
       if (fileType === 'gallery') {
-         const files = Array.from(e.target.files);
+         const files: File[] = Array.from(e.target.files);
          files.forEach(file => {
              const reader = new FileReader();
              reader.onload = (event) => {
@@ -187,7 +186,7 @@ const CreationPage: React.FC<CreationPageProps> = ({ onSaveBot, onNavigate, botT
         gif, 
         scenario, 
         chatBackground, 
-        originalChatBackground,
+        originalChatBackground, 
         personaId: botToEdit?.personaId, 
         isSpicy: conversationMode === 'spicy' || conversationMode === 'extreme',
         conversationMode,

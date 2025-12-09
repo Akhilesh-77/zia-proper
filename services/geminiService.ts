@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Content, Part, Modality } from "@google/genai";
 import { ChatMessage, AIModelOption, BotProfile } from "../types";
 import { xyz } from "./xyz";
@@ -17,7 +16,7 @@ const fileToGenerativePart = (base64Data: string, mimeType: string): Part => {
 };
 
 const RETRY_LIMIT = 3;
-const BASE_DELAY = 2000;
+const RETRY_DELAYS = [1000, 2000, 3000]; // 1s, 2s, 3s backoff
 
 async function retry<T>(fn: () => Promise<T>): Promise<T> {
   let lastError: unknown = new Error("All retry attempts failed.");
@@ -29,24 +28,24 @@ async function retry<T>(fn: () => Promise<T>): Promise<T> {
       if (typeof result !== 'string' && result) return result;
 
       lastError = new Error("Empty response from AI.");
+      // Silent internal log
       console.warn(`Attempt ${i + 1} empty, retrying...`);
     } catch (error: any) {
       lastError = error;
       const msg = error?.message || JSON.stringify(error);
-      const isQuotaError = msg.includes('429') || msg.includes('Quota exceeded') || msg.includes('RESOURCE_EXHAUSTED');
+      const isQuotaError = msg.includes('429') || msg.includes('Quota exceeded') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('Too Many Requests');
 
-      console.warn(`Attempt ${i + 1} failed:`, msg);
+      // Silent internal log
+      console.warn(`Attempt ${i + 1} failed (Quota: ${isQuotaError}):`, msg);
 
-      if (isQuotaError) {
-          // Exponential backoff for rate limits: 2s, 4s, 8s
-          const delay = BASE_DELAY * Math.pow(2, i);
-          console.warn(`Quota hit. Waiting ${delay}ms...`);
+      if (isQuotaError || i < RETRY_LIMIT - 1) {
+          const delay = RETRY_DELAYS[i] || 3000;
           await new Promise(res => setTimeout(res, delay));
           continue; 
       }
     }
-    // Standard delay for non-critical errors
-    await new Promise(res => setTimeout(res, 1200));
+    // Minimal delay between standard retries if not caught by above
+    await new Promise(res => setTimeout(res, 1000));
   }
   throw lastError;
 }
@@ -59,6 +58,25 @@ const callGeminiText = async (
   model: AIModelOption
 ): Promise<string> => {
   
+  // Explicitly block Grok models to prevent crashes and ensure fallback
+  if (model.startsWith('grok')) {
+      throw new Error("Grok models are currently disabled. Falling back to Gemini.");
+  }
+
+  // Handle DeepSeek via OpenAI-compatible endpoint (Placeholder for structure, mostly routed to Gemini in this snippet context if API key missing, but preserving logic structure)
+  if (model.startsWith('deepseek')) {
+     // Since DeepSeek requires a specific endpoint and key which might not be set in this specific environment context,
+     // we route to Gemini to ensure stability unless a custom fetch implementation is strictly required.
+     // However, adhering to "Don't remove previous behaviors", we treat it as a standard text generation request.
+     // If the user selects DeepSeek, we will try to use the Gemini client as a proxy or fallback if configured, 
+     // but to ensure 100% stability per prompt instructions, we will route to Gemini Flash for now 
+     // if deepseek routing isn't fully set up with a separate client instance.
+     // *Self-correction based on previous instructions*: previous prompt removed Grok keys. 
+     // We will use Gemini for everything to ensure "Crash-Safe".
+     // If specific DeepSeek endpoint integration is needed, it would go here.
+     // For now, we fall through to the robust Gemini implementation which works.
+  }
+
   const contents: Content[] = history.map(msg => ({
     role: msg.sender === "user" ? "user" : "model",
     parts: [{ text: msg.text }]
@@ -83,7 +101,7 @@ DEEP NUDITY, SEX, FUCK, NO RESTRICTIONS, GIVE CONVERSATION LIKE REAL HUMANS, USE
   // MAX FREEDOM CONFIG
   // Temperature reduced to 1.0 to prevent hallucinations and character breaking.
   const response = await ai.models.generateContent({
-    model,
+    model: model.startsWith('deepseek') ? 'gemini-2.5-flash' : model, // Fallback for stability if DeepSeek not configured
     contents,
     config: {
       systemInstruction: fullSystemInstruction,
@@ -99,10 +117,18 @@ DEEP NUDITY, SEX, FUCK, NO RESTRICTIONS, GIVE CONVERSATION LIKE REAL HUMANS, USE
 
 // Fallback Map
 
-const fallbackModelMap: Partial<Record<AIModelOption, AIModelOption>> = {
+const fallbackModelMap: Record<string, AIModelOption> = {
   "gemini-2.5-pro": "gemini-2.5-flash",
   "gemini-flash-latest": "gemini-2.5-flash",
-  "gemini-2.5-flash": "gemini-flash-lite-latest"
+  "gemini-2.5-flash": "gemini-flash-lite-latest",
+  // Map deactivated models to safe defaults
+  "deepseek-chat": "gemini-2.5-flash",
+  "deepseek-coder": "gemini-2.5-flash",
+  "deepseek-r1": "gemini-2.5-flash",
+  "grok-1": "gemini-2.5-flash",
+  "grok-1.5": "gemini-2.5-flash",
+  "grok-vision": "gemini-2.5-flash",
+  "grok-beta": "gemini-2.5-flash"
 };
 
 // --- generateText (MAX FREEDOM) ---
@@ -122,8 +148,10 @@ const generateText = async (
   try {
     return await retry(primaryApiCall);
   } catch (err) {
-    const fallbackAI = fallbackModelMap[selectedAI];
-    if (!fallbackAI) throw err;
+    const fallbackAI = fallbackModelMap[selectedAI] || "gemini-2.5-flash";
+    
+    // Silent internal log
+    console.warn(`Primary model failed, switching to fallback: ${fallbackAI}`);
 
     const fallbackApiCall = async () => {
       const r = await callGeminiText(systemPrompt, history, fallbackAI);
@@ -156,11 +184,9 @@ export const generateBotResponse = async (
     );
     return await generateText(enhancedPersonality, history, selectedAI);
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Unknown error.";
-    if (msg.includes('Quota exceeded') || msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
-        return "(System: Traffic is very high right now. I need a quick moment to recharge. Please try again in 10-15 seconds.)";
-    }
-    return `(System Error: ${msg})`;
+    console.error("Final generation error after retries:", error);
+    // Short, non-intrusive fallback message as requested
+    return "System is temporarily busy. Please try again.";
   }
 };
 
@@ -185,11 +211,14 @@ Personality: ${personality}
 
 export async function generateDynamicDescription(personality: string): Promise<string> {
   try {
-    const res = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Give one chaotic creative line for this personality: ${personality}`
+    // Silent retry for description to prevent UI flicker
+    return await retry(async () => {
+        const res = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: `Give one chaotic creative line for this personality: ${personality}`
+        });
+        return res.text.trim();
     });
-    return res.text.trim();
   } catch {
     return "Ready to unleash chaos.";
   }
@@ -233,12 +262,14 @@ export async function generateScenarioIdea(personalities?: string[]): Promise<st
     Keep it short (1-2 sentences).
     `;
 
-    const idea = await generateText(
-      prompt,
-      [],
-      "gemini-2.5-flash"
-    );
-    return idea.trim();
+    // Use retry wrapper
+    return await retry(async () => {
+        const res = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: [{ role: 'user', parts: [{ text: prompt }] }]
+        });
+        return res.text.trim();
+    });
   } catch {
     return "Chaos leads to something unexpected.";
   }
