@@ -1,3 +1,4 @@
+
 // FREE BIRD MODE – MAX UNLOCKED VERSION
 
 import { GoogleGenAI, Content, Part, Modality } from "@google/genai";
@@ -37,6 +38,55 @@ async function retry<T>(fn: () => Promise<T>): Promise<T> {
   }
   throw lastError;
 }
+
+// --- DEEPSEEK LOGIC ---
+
+const callDeepSeek = async (
+  systemPrompt: string,
+  history: ChatMessage[]
+): Promise<string> => {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error("(System: Invalid DeepSeek key)");
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    ...history.map(msg => ({
+      role: msg.sender === 'user' ? 'user' : 'assistant',
+      content: msg.text
+    }))
+  ];
+
+  try {
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages,
+        temperature: 0.9,
+        max_tokens: 4096,
+        top_p: 0.95
+      })
+    });
+
+    if (!response.ok) {
+       if (response.status === 401) throw new Error("(System: Invalid DeepSeek key)");
+       if (response.status === 429) throw new Error("(System: DeepSeek busy, try again in a few seconds)");
+       if (response.status >= 500) throw new Error("(System: DeepSeek internal error)");
+       throw new Error("(System: Network issue)");
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content?.trim() || "";
+  } catch (error: any) {
+     if (error.message && error.message.startsWith("(System:")) throw error;
+     if (error.name === 'TypeError') throw new Error("(System: Network issue)");
+     throw error;
+  }
+};
 
 // --- ABSOLUTELY FREE BIRD CORE LOGIC ---
 
@@ -100,6 +150,12 @@ const generateText = async (
   selectedAI: AIModelOption
 ): Promise<string> => {
   
+  // 1. ROUTE TO DEEPSEEK
+  if (selectedAI === 'deepseek-chat') {
+    return await callDeepSeek(systemPrompt, history);
+  }
+
+  // 2. EXISTING GEMINI LOGIC
   const primaryApiCall = async () => {
     const r = await callGeminiText(systemPrompt, history, selectedAI);
     if (!r.trim()) throw new Error("Empty response.");
