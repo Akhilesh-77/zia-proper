@@ -3,7 +3,7 @@ import { GoogleGenAI, Content, Part, Modality } from "@google/genai";
 import { ChatMessage, AIModelOption, BotProfile } from "../types";
 import { xyz } from "./xyz";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // --- Helper Functions ---
 
