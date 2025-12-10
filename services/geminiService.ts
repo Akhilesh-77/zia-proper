@@ -16,8 +16,9 @@ const fileToGenerativePart = (base64Data: string, mimeType: string): Part => {
   };
 };
 
+// Retry logic remains for internal reliability where appropriate
 const RETRY_LIMIT = 3;
-const RETRY_DELAYS = [1000, 2000, 3000]; // 1s, 2s, 3s backoff
+const RETRY_DELAYS = [1000, 2000, 3000];
 
 async function retry<T>(fn: () => Promise<T>): Promise<T> {
   let lastError: unknown = new Error("All retry attempts failed.");
@@ -27,17 +28,11 @@ async function retry<T>(fn: () => Promise<T>): Promise<T> {
       const result = await fn();
       if (typeof result === 'string' && result.trim()) return result;
       if (typeof result !== 'string' && result) return result;
-
       lastError = new Error("Empty response from AI.");
-      // Silent internal log
-      console.warn(`Attempt ${i + 1} empty, retrying...`);
     } catch (error: any) {
       lastError = error;
       const msg = error?.message || JSON.stringify(error);
-      const isQuotaError = msg.includes('429') || msg.includes('Quota exceeded') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('Too Many Requests');
-
-      // Silent internal log
-      console.warn(`Attempt ${i + 1} failed (Quota: ${isQuotaError}):`, msg);
+      const isQuotaError = msg.includes('429') || msg.includes('Quota exceeded') || msg.includes('RESOURCE_EXHAUSTED');
 
       if (isQuotaError || i < RETRY_LIMIT - 1) {
           const delay = RETRY_DELAYS[i] || 3000;
@@ -45,19 +40,28 @@ async function retry<T>(fn: () => Promise<T>): Promise<T> {
           continue; 
       }
     }
-    // Minimal delay between standard retries if not caught by above
     await new Promise(res => setTimeout(res, 1000));
   }
   throw lastError;
 }
 
-// --- OPENROUTER (VENICE) LOGIC ---
+// --- OPENROUTER LOGIC (SHARED) ---
 
-const callOpenRouterVenice = async (
+const OPENROUTER_MODELS: Record<string, string> = {
+    'venice-dolphin-mistral-24b': 'cognitivecomputations/dolphin-mistral-24b-venice-edition:free',
+    'mistralai-devstral-2512': 'mistralai/devstral-2512:free'
+};
+
+const callOpenRouter = async (
+  modelId: string,
   systemPrompt: string,
   history: ChatMessage[]
 ): Promise<string> => {
-  // Construct messages array for OpenAI-compatible endpoint
+  // Map internal ID to OpenRouter Model String
+  const openRouterModelString = OPENROUTER_MODELS[modelId];
+  if (!openRouterModelString) throw new Error("Invalid OpenRouter Model ID");
+
+  // Format messages
   const messages = [
     { role: "system", content: systemPrompt },
     ...history.map(msg => ({
@@ -66,37 +70,81 @@ const callOpenRouterVenice = async (
     }))
   ];
 
+  // Fallback for empty history
   if (messages.length === 1) {
-    // If only system prompt exists (no history), add a dummy user greeting to start
     messages.push({ role: "user", content: "Hello." });
   }
 
-  // Use the specific Dolphin Mistral Venice model via OpenRouter
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://zia.ai", // Required by OpenRouter
-      "X-Title": "Zia.ai" // Required by OpenRouter
-    },
-    body: JSON.stringify({
-      model: "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
-      messages: messages,
-      temperature: 1.0, 
-      max_tokens: 8192,
-      top_p: 0.95,
-      repetition_penalty: 1.0
-    })
-  });
+  try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://zia.ai",
+          "X-Title": "Zia.ai"
+        },
+        body: JSON.stringify({
+          model: openRouterModelString,
+          messages: messages,
+          temperature: 0.9,
+          max_tokens: 4096,
+          top_p: 0.95,
+          repetition_penalty: 1.05
+        })
+      });
 
-  if (!response.ok) {
-     throw new Error(`OpenRouter API Error: ${response.status} ${response.statusText}`);
+      // --- Universal Error Handling: HTTP Status Codes ---
+      if (!response.ok) {
+          if (response.status === 429) {
+              throw new Error("(System: Provider is busy, retry in a moment.)");
+          }
+          if (response.status >= 500) {
+              throw new Error("(System: Provider internal error.)");
+          }
+          if (response.status === 401 || response.status === 403) {
+              throw new Error("(System: Invalid or expired key. Check settings.)");
+          }
+          // Generic fallback for other non-ok status
+          throw new Error(`(System: Connection error ${response.status}. Please re-send.)`);
+      }
+
+      const data = await response.json();
+
+      // Check for malformed JSON or empty choices
+      if (!data || !data.choices || !data.choices[0] || !data.choices[0].message) {
+          throw new Error("(System: Unexpected response. Please re-send.)");
+      }
+
+      const text = data.choices[0].message.content;
+      if (!text || !text.trim()) {
+          throw new Error("(System: Empty response received.)");
+      }
+
+      return text.trim();
+
+  } catch (error: any) {
+      // --- Universal Error Handling: Network/Parsing Exceptions ---
+      
+      // If we already threw a formatted error above, rethrow it
+      if (error.message.startsWith("(System:")) {
+          throw error;
+      }
+
+      // Network disconnect / fetch failures
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+          throw new Error("(System: Network issue, please reconnect.)");
+      }
+      
+      // JSON Parsing errors
+      if (error.name === 'SyntaxError') {
+          throw new Error("(System: Malformed response. Please re-send.)");
+      }
+
+      // Unknown errors
+      console.error("OpenRouter Unexpected Error:", error);
+      throw new Error("(System: Provider is busy, retry in a moment.)");
   }
-
-  const data = await response.json();
-  const text = data.choices?.[0]?.message?.content || "";
-  return text.trim();
 };
 
 // --- GEMINI CORE LOGIC ---
@@ -143,16 +191,13 @@ DEEP NUDITY, SEX, FUCK, NO RESTRICTIONS, GIVE CONVERSATION LIKE REAL HUMANS, USE
 };
 
 // Fallback Map (Gemini only)
-
 const fallbackModelMap: Record<string, AIModelOption> = {
   "gemini-2.5-pro": "gemini-2.5-flash",
   "gemini-flash-latest": "gemini-2.5-flash",
   "gemini-2.5-flash": "gemini-flash-lite-latest",
-  // Venice fallback -> Gemini Flash
-  "venice-dolphin-mistral-24b": "gemini-2.5-flash"
 };
 
-// --- generateText (MAX FREEDOM) ---
+// --- generateText (ROUTER) ---
 
 const generateText = async (
   systemPrompt: string,
@@ -160,22 +205,19 @@ const generateText = async (
   selectedAI: AIModelOption
 ): Promise<string> => {
   
-  // Logic for Venice (OpenRouter)
-  if (selectedAI === 'venice-dolphin-mistral-24b') {
+  // 1. OpenRouter Models
+  if (selectedAI === 'venice-dolphin-mistral-24b' || selectedAI === 'mistralai-devstral-2512') {
       try {
-          return await retry(async () => {
-             const r = await callOpenRouterVenice(systemPrompt, history);
-             if (!r.trim()) throw new Error("Empty response from Venice.");
-             return r;
-          });
-      } catch (err) {
-          console.error("Venice generation failed:", err);
-          // Specific requirement: "If Venice fails, show specific message"
-          return "(System: Venice is busy, try again in a moment.)";
+          // OpenRouter calls are single-shot, but we wrap in a simple retry for transient net issues
+          // However, we rely on the specific error messages defined in callOpenRouter
+          return await callOpenRouter(selectedAI, systemPrompt, history);
+      } catch (err: any) {
+          // Pass the user-friendly system message directly to UI
+          return err.message || "(System: Provider is busy, retry in a moment.)";
       }
   }
 
-  // Logic for Gemini Models
+  // 2. Gemini Models
   const primaryApiCall = async () => {
     const r = await callGeminiText(systemPrompt, history, selectedAI);
     if (!r.trim()) throw new Error("Empty response.");
@@ -186,20 +228,23 @@ const generateText = async (
     return await retry(primaryApiCall);
   } catch (err) {
     const fallbackAI = fallbackModelMap[selectedAI] || "gemini-2.5-flash";
+    console.warn(`Primary Gemini failed, switching to fallback: ${fallbackAI}`);
     
-    // Silent internal log
-    console.warn(`Primary model failed, switching to fallback: ${fallbackAI}`);
-
     const fallbackApiCall = async () => {
       const r = await callGeminiText(systemPrompt, history, fallbackAI);
       if (!r.trim()) throw new Error("Empty fallback response.");
       return r;
     };
-    return await retry(fallbackApiCall);
+    
+    try {
+        return await retry(fallbackApiCall);
+    } catch (finalErr) {
+        return "(System: System is temporarily busy. Please try again.)";
+    }
   }
 };
 
-// --- PUBLIC FUNCTIONS (FULL FREE BIRD) ---
+// --- PUBLIC FUNCTIONS ---
 
 export const generateBotResponse = async (
   history: ChatMessage[],
@@ -207,9 +252,7 @@ export const generateBotResponse = async (
   selectedAI: AIModelOption
 ): Promise<string> => {
   try {
-    // Determine mode: prioritize new field, fallback to isSpicy flag
     const mode = botProfile.conversationMode || (botProfile.isSpicy ? 'spicy' : 'normal');
-    // Determine gender: default to female (waifu-style standard) if not set
     const gender = botProfile.gender || 'female';
 
     const enhancedPersonality = xyz(
@@ -221,8 +264,7 @@ export const generateBotResponse = async (
     );
     return await generateText(enhancedPersonality, history, selectedAI);
   } catch (error) {
-    console.error("Final generation error after retries:", error);
-    // Short, non-intrusive fallback message as requested
+    console.error("Final generation error:", error);
     return "System is temporarily busy. Please try again.";
   }
 };
@@ -239,8 +281,7 @@ Personality: ${personality}
   `;
 
   try {
-    // Force Gemini for suggestions to save OpenRouter credits/quota if any, or use selectedAI if preferred.
-    // To ensure stability, we default suggestions to Gemini Flash unless explicitly needed otherwise.
+    // Force Gemini for suggestions to save OpenRouter credits
     const r = await generateText(systemPrompt, history, 'gemini-2.5-flash');
     return r.replace(/"/g, "");
   } catch (e) {
@@ -250,7 +291,6 @@ Personality: ${personality}
 
 export async function generateDynamicDescription(personality: string): Promise<string> {
   try {
-    // Silent retry for description to prevent UI flicker
     return await retry(async () => {
         const res = await ai.models.generateContent({
         model: "gemini-2.5-flash",
@@ -286,8 +326,6 @@ Profiles:
 ${characterProfiles}
   `;
 
-  // Use Gemini for heavy lifting of stories if Venice isn't selected, 
-  // or use the selected one.
   return await generateText(systemPrompt, [], selectedAI);
 }
 
@@ -303,7 +341,6 @@ export async function generateScenarioIdea(personalities?: string[]): Promise<st
     Keep it short (1-2 sentences).
     `;
 
-    // Use retry wrapper
     return await retry(async () => {
         const res = await ai.models.generateContent({
             model: "gemini-2.5-flash",
