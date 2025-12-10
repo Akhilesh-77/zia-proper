@@ -9,7 +9,7 @@ import { xyz } from "./xyz";
 
 // Gemini API Instance
 const ai = new GoogleGenAI({ 
-  apiKey: "AIzaSyBL4GJ4JxHJNotiHpMV6T8L_ChcFClv8no" 
+  apiKey: "AIzaSyDezrPOsNu7p2K_v8sqHOmwdrtBmatSs3s" 
 });
 
 // OpenRouter API Key
