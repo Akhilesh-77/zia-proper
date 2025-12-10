@@ -13,7 +13,7 @@ const ai = new GoogleGenAI({
 });
 
 // OpenRouter API Key
-const OPENROUTER_KEY = "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";
+const OPENROUTER_KEY = "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";
 
 // ------------------------------------------------------------------
 // 🛠️ HELPER FUNCTIONS
