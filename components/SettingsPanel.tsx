@@ -25,6 +25,8 @@ const aiModelOptions: { id: AIModelOption, name: string }[] = [
     { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
     { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)' },
     { id: 'gemini-flash-lite-latest', name: 'Gemini Flash Lite' },
+    { id: 'venice-dolphin-mistral-24b', name: 'Venice Dolphin Mistral 24B' },
+    { id: 'mistralai-devstral-2512', name: 'Mistral Devstral 2512' },
 ];
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, theme, toggleTheme, onClearData, selectedAI, onSelectAI, voicePreference, onSetVoicePreference, hasConsented, onConsentChange, onNavigate }) => {

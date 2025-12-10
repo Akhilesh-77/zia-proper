@@ -1,7 +1,7 @@
 
 // FIX: Removed self-import of 'BotProfile' which was causing a conflict with its local declaration.
 
-export type AIModelOption = 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-flash-latest' | 'gemini-flash-lite-latest';
+export type AIModelOption = 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-flash-latest' | 'gemini-flash-lite-latest' | 'venice-dolphin-mistral-24b' | 'mistralai-devstral-2512';
 export type VoicePreference = string;
 
 export type ConversationMode = 'normal' | 'spicy' | 'extreme';
