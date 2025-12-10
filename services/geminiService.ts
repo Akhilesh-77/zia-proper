@@ -3,7 +3,8 @@ import { GoogleGenAI, Content, Part, Modality } from "@google/genai";
 import { ChatMessage, AIModelOption, BotProfile } from "../types";
 import { xyz } from "./xyz";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// Hardcoded Gemini API Key
+const ai = new GoogleGenAI({ apiKey: "AIzaSyBL4GJ4JxHJNotiHpMV6T8L_ChcFClv8no" });
 
 // --- Helper Functions ---
 
@@ -79,7 +80,7 @@ const callOpenRouter = async (
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Authorization": "Bearer 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",
           "Content-Type": "application/json",
           "HTTP-Referer": "https://zia.ai",
           "X-Title": "Zia.ai"
