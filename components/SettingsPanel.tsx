@@ -25,6 +25,8 @@ const aiModelOptions: { id: AIModelOption, name: string }[] = [
     { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
     { id: 'gemini-flash-latest', name: 'Gemini Flash (Latest)' },
     { id: 'gemini-flash-lite-latest', name: 'Gemini Flash Lite' },
+    { id: 'deepseek-chat', name: 'DeepSeek Chat (Direct)' },
+    { id: 'deepseek-r1-free', name: 'DeepSeek R1 Free (Chimera)' },
     { id: 'venice-dolphin-mistral-24b', name: 'Venice Dolphin Mistral 24B' },
     { id: 'mistralai-devstral-2512', name: 'Mistral Devstral 2512' },
 ];
